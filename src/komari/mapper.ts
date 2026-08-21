@@ -1,4 +1,4 @@
-import type { MmwxSystemSeries, MmwxSystemSeriesPoint, ProbeBucket, ProbePingSeries, ProbeServer } from '../mmwx/types.js'
+import type { MmwxMetricPoint, MmwxProbeSeries, MmwxSystemMetricSeries, MmwxSystemSeries, MmwxSystemSeriesPoint, ProbeBucket, ProbePingSeries, ProbeSeriesPayload, ProbeServer } from '../mmwx/types.js'
 import type { KomariLoad, KomariNetwork, KomariNode, KomariRecord, LoadHistory, LoadHistoryRecord, PingHistory, PingTask } from './types.js'
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -120,7 +120,14 @@ export function toPingHistory(servers: ProbeServer[], now: Date): PingHistory {
   }
 }
 
-export function toPingSeriesHistory(pings: readonly ProbePingSeries[]): PingHistory {
+export function toPingSeriesHistory(payload: ProbeSeriesPayload, serverIndexValue = 0): PingHistory {
+  if (payload.all_series || payload.series) {
+    return toMmwxProbePingHistory(payload, serverIndexValue)
+  }
+  return toLegacyPingSeriesHistory(payload.pings ?? [])
+}
+
+function toLegacyPingSeriesHistory(pings: readonly ProbePingSeries[]): PingHistory {
   const tasksByName = new Map<string, PingTask>()
   const clients = new Set<string>()
   const records = pings.flatMap((series) => {
@@ -155,6 +162,41 @@ export function toPingSeriesHistory(pings: readonly ProbePingSeries[]): PingHist
   }
 }
 
+function toMmwxProbePingHistory(payload: ProbeSeriesPayload, serverIndexValue: number): PingHistory {
+  const bucketSec = numberOrUndefined(payload.bucket_sec) ?? 300
+  const generatedAt = numberOrUndefined(payload.generated_at) ?? Math.floor(Date.now() / 1000)
+  const series = payload.all_series ?? (isProbeSeries(payload.series) ? [payload.series] : [])
+  const client = `mmwx-${serverIndexValue}`
+  const tasks = series.map((item, index): PingTask => ({
+    id: index,
+    name: item.label?.trim() || item.key?.trim() || `Ping ${index + 1}`,
+    clients: [client],
+    default_on: true,
+    type: 'icmp',
+    interval: 30,
+  }))
+  const maxBuckets = Math.max(0, ...series.map((item) => item.buckets?.length ?? 0))
+  const baseTime = generatedAt - (generatedAt % bucketSec)
+  const records = series.flatMap((item, taskId) => (item.buckets ?? []).map((bucket, index) => ({
+    task_id: taskId,
+    time: new Date((baseTime - (maxBuckets - 1 - index) * bucketSec) * 1000).toISOString(),
+    value: numberOrUndefined(bucket.ms) ?? null,
+    loss: numberOrUndefined(bucket.loss) ?? null,
+    client,
+  }))).sort((left, right) => {
+    const timeDiff = new Date(left.time).getTime() - new Date(right.time).getTime()
+    if (timeDiff !== 0) return timeDiff
+    return left.task_id - right.task_id
+  })
+
+  return {
+    count: records.length,
+    records,
+    tasks,
+    basic_info: { clients: [client] },
+  }
+}
+
 function serverIndex(serverId: string | number | undefined): number {
   const numeric = numberOrUndefined(serverId)
   return numeric !== undefined && numeric >= 0 ? Math.trunc(numeric) : 0
@@ -180,4 +222,44 @@ export function toLoadHistory(series: MmwxSystemSeries): LoadHistory {
     .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 
   return { count: records.length, records }
+}
+
+export function toSystemMetricHistory(series: MmwxSystemMetricSeries, serverIndexValue: number): LoadHistory {
+  const byTime = new Map<number, LoadHistoryRecord>()
+  const applyMetric = (points: readonly MmwxMetricPoint[] | undefined, assign: (record: LoadHistoryRecord, value: number) => void): void => {
+    for (const point of points ?? []) {
+      const timestamp = metricTimestamp(point)
+      const value = numberOrUndefined(point.value)
+      if (timestamp === undefined || value === undefined) continue
+      const existing = byTime.get(timestamp) ?? { client: `mmwx-${serverIndexValue}`, time: new Date(timestamp * 1000).toISOString() }
+      assign(existing, value)
+      byTime.set(timestamp, existing)
+    }
+  }
+
+  applyMetric(series.cpu_pct, (record, value) => { record.cpu = value })
+  applyMetric(series.mem_used, (record, value) => { record.ram = value })
+  applyMetric(series.load1 ?? series.load, (record, value) => { record.load = value })
+  applyMetric(series.upload_speed ?? series.traffic_up, (record, value) => { record.net_out = value })
+  applyMetric(series.download_speed ?? series.traffic_down, (record, value) => { record.net_in = value })
+
+  const records = [...byTime.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, record]) => record)
+  return { count: records.length, records }
+}
+
+function metricTimestamp(point: MmwxMetricPoint): number | undefined {
+  const raw = point.t ?? point.timestamp
+  const numeric = numberOrUndefined(raw)
+  if (numeric !== undefined) return Math.trunc(numeric)
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw)
+    if (Number.isFinite(parsed)) return Math.trunc(parsed / 1000)
+  }
+  return undefined
+}
+
+function isProbeSeries(value: unknown): value is MmwxProbeSeries {
+  return typeof value === 'object' && value !== null && Array.isArray((value as { buckets?: unknown }).buckets)
 }

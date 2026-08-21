@@ -1,5 +1,5 @@
-import type { ProbePayload, ProbeSeriesPayload, SeriesQuery } from '../mmwx/types.js'
-import { toKomariNode, toKomariRecord, toLoadHistory, toPingSeriesHistory } from './mapper.js'
+import type { MmwxSystemMetricSeries, ProbePayload, ProbeSeriesPayload, SeriesQuery } from '../mmwx/types.js'
+import { toKomariNode, toKomariRecord, toLoadHistory, toPingSeriesHistory, toSystemMetricHistory } from './mapper.js'
 import type { KomariSnapshot, LoadHistory, PingHistory } from './types.js'
 
 interface DataClient {
@@ -50,14 +50,16 @@ export class KomariDataService {
   }
 
   public async getPingHistory(query: SeriesQuery): Promise<PingHistory> {
-    const payload = await this.getSeries(seriesQuery(query))
-    if (payload.pings) return toPingSeriesHistory(payload.pings)
+    const index = serverIndexFromQuery(query)
+    const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), all: '1' }))
+    if (payload.pings || payload.all_series || payload.series) return toPingSeriesHistory(payload, index)
     return { count: 0, records: [], tasks: [], basic_info: { clients: [] } }
   }
 
   public async getLoadHistory(uuid: string, query: SeriesQuery): Promise<LoadHistory> {
-    const payload = await this.getSeries(seriesQuery(query, { metric: 'system' }))
-    const index = Number(uuid.replace(/^mmwx-/, ''))
+    const index = serverIndexFromUuid(uuid)
+    const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), metric: 'system' }))
+    if (isSystemMetricSeries(payload.series)) return toSystemMetricHistory(payload.series, index)
     const series = payload.systems?.find((item) => Number(item.serverId) === index) ?? payload.systems?.[0] ?? { serverId: index, points: [] }
     return toLoadHistory({ ...series, serverId: index })
   }
@@ -124,6 +126,37 @@ function stableKey(query: SeriesQuery): string {
 }
 
 function seriesQuery(query: SeriesQuery, override: SeriesQuery = {}): SeriesQuery {
-  const { uuid: _uuid, task_id: _taskId, load_type: _loadType, ...upstreamQuery } = query
+  const { uuid: _uuid, task_id: _taskId, load_type: _loadType, hours: _hours, ...upstreamQuery } = query
   return { ...upstreamQuery, ...override }
+}
+
+function serverIndexFromQuery(query: SeriesQuery): number {
+  return serverIndexFromUuid(query.uuid)
+}
+
+function serverIndexFromUuid(uuid: unknown): number {
+  if (typeof uuid !== 'string') return 0
+  const match = uuid.match(/^mmwx-(0|[1-9]\d*)$/)
+  return match ? Number(match[1]) : 0
+}
+
+function rangeFromQuery(query: SeriesQuery): string {
+  if (typeof query.range === 'string' && /^(?:1h|6h|24h)$/.test(query.range)) return query.range
+  const raw = query.hours
+  const hours = typeof raw === 'number' ? raw : Number(raw)
+  if (hours <= 1) return '1h'
+  if (hours <= 6) return '6h'
+  return '24h'
+}
+
+function isSystemMetricSeries(value: unknown): value is MmwxSystemMetricSeries {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray((value as { buckets?: unknown }).buckets)
+    && (
+      Array.isArray((value as { cpu_pct?: unknown }).cpu_pct)
+      || Array.isArray((value as { mem_used?: unknown }).mem_used)
+      || Array.isArray((value as { upload_speed?: unknown }).upload_speed)
+      || Array.isArray((value as { download_speed?: unknown }).download_speed)
+    )
 }

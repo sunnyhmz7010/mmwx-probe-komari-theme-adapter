@@ -190,20 +190,25 @@ test('Komari load history requests system metrics from the MMWX series API', asy
     fetchSeries: async (query: SeriesQuery) => {
       seen.push(query)
       return {
-        systems: [{
-          serverId: 0,
-          points: [{ timestamp: '2026-08-21T00:00:00.000Z', cpu: 12, memory: 34, upload: 56, download: 78 }],
-        }],
+        success: true,
+        bucket_sec: 300,
+        generated_at: 1787313000,
+        series: {
+          cpu_pct: [{ t: 1787312700, value: 12 }],
+          mem_used: [{ t: 1787312700, value: 34 }],
+          upload_speed: [{ t: 1787312700, value: 56 }],
+          download_speed: [{ t: 1787312700, value: 78 }],
+        },
       }
     },
   }, 1000)
 
   const history = await service.getLoadHistory('mmwx-0', { uuid: 'mmwx-0', hours: '24' })
 
-  assert.deepEqual(seen, [{ hours: '24', metric: 'system' }])
+  assert.deepEqual(seen, [{ server: '0', range: '24h', metric: 'system' }])
   assert.deepEqual(history.records, [{
     client: 'mmwx-0',
-    time: '2026-08-21T00:00:00.000Z',
+    time: '2026-08-21T11:45:00.000Z',
     cpu: 12,
     ram: 34,
     net_out: 56,
@@ -218,19 +223,19 @@ test('Komari ping history uses latency and loss points from the MMWX series API'
     fetchSeries: async (query: SeriesQuery) => {
       seen.push(query)
       return {
-        pings: [
+        success: true,
+        bucket_sec: 300,
+        generated_at: 1787313000,
+        all_series: [
           {
-            serverId: 0,
-            route: 'Google',
-            points: [
-              { timestamp: '2026-08-21T00:00:00.000Z', value: 10, loss: 0 },
-              { timestamp: '2026-08-21T00:01:00.000Z', value: 11, loss: 1 },
-            ],
+            key: 'google',
+            label: 'Google',
+            buckets: [{ ms: 10, loss: 0 }, { ms: 11, loss: 1 }],
           },
           {
-            serverId: 1,
-            route: 'Google',
-            points: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 20, loss: 2 }],
+            key: 'cloudflare',
+            label: 'Cloudflare',
+            buckets: [{ ms: 20, loss: 2 }, { ms: null, loss: 100 }],
           },
         ],
       }
@@ -239,16 +244,20 @@ test('Komari ping history uses latency and loss points from the MMWX series API'
 
   const history = await service.getPingHistory({ uuid: 'mmwx-0', task_id: '0', hours: '24' })
 
-  assert.deepEqual(seen, [{ hours: '24' }])
+  assert.deepEqual(seen, [{ server: '0', range: '24h', all: '1' }])
   assert.deepEqual(history, {
-    count: 3,
+    count: 4,
     records: [
-      { task_id: 0, time: '2026-08-21T00:00:00.000Z', value: 10, loss: 0, client: 'mmwx-0' },
-      { task_id: 0, time: '2026-08-21T00:00:00.000Z', value: 20, loss: 2, client: 'mmwx-1' },
-      { task_id: 0, time: '2026-08-21T00:01:00.000Z', value: 11, loss: 1, client: 'mmwx-0' },
+      { task_id: 0, time: '2026-08-21T11:45:00.000Z', value: 10, loss: 0, client: 'mmwx-0' },
+      { task_id: 1, time: '2026-08-21T11:45:00.000Z', value: 20, loss: 2, client: 'mmwx-0' },
+      { task_id: 0, time: '2026-08-21T11:50:00.000Z', value: 11, loss: 1, client: 'mmwx-0' },
+      { task_id: 1, time: '2026-08-21T11:50:00.000Z', value: null, loss: 100, client: 'mmwx-0' },
     ],
-    tasks: [{ id: 0, name: 'Google', clients: ['mmwx-0', 'mmwx-1'], default_on: true, type: 'icmp', interval: 30 }],
-    basic_info: { clients: ['mmwx-0', 'mmwx-1'] },
+    tasks: [
+      { id: 0, name: 'Google', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
+      { id: 1, name: 'Cloudflare', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
+    ],
+    basic_info: { clients: ['mmwx-0'] },
   })
 })
 

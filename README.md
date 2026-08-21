@@ -196,7 +196,7 @@ docker compose logs -f
 
 - 固定上游路径：HTTP 探针数据只请求 `/api/public/probe-servers` 和 `/api/public/probe-series`，实时流只请求 `/api/public/probe-ws`
 - 查询参数透传：`/api/series` 会透传 `hours`、`metric` 等查询参数，但不会允许访客覆盖主控地址
-- 历史数据映射：Komari 的 `/api/records/ping` 使用 MMWX series 中的延迟和丢包率历史，`/api/records/load` 固定追加 `metric=system` 获取系统指标历史
+- 历史数据映射：Komari 的 `/api/records/ping` 和 `/api/records/load` 会把 `uuid=mmwx-0`、`hours=24` 转换为主控需要的 `server=0`、`range=24h`，其中系统指标固定追加 `metric=system`
 - 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程

@@ -57,18 +57,57 @@ export interface ProbeReturnRoute {
 export interface SeriesQuery {
   hours?: number | string
   uuid?: string
+  server?: number | string
+  range?: string
+  metric?: string
+  all?: number | string
   [key: string]: string | number | boolean | undefined
 }
 
 export interface ProbeSeriesPayload {
   pings?: ProbePingSeries[]
   systems?: MmwxSystemSeries[]
+  success?: boolean
+  bucket_sec?: number
+  generated_at?: number
+  series?: MmwxProbeSeries | MmwxSystemMetricSeries
+  all_series?: MmwxProbeSeries[]
 }
 
 export interface ProbePingSeries {
   serverId?: string | number
   route?: string | null
   points: ProbeSeriesPoint[]
+}
+
+export interface MmwxProbeSeries {
+  key?: string | null
+  label?: string | null
+  current_ms?: number | string | null
+  loss_pct?: number | string | null
+  buckets?: MmwxProbeSeriesBucket[]
+}
+
+export interface MmwxProbeSeriesBucket {
+  ms?: number | string | null
+  loss?: number | string | null
+}
+
+export interface MmwxSystemMetricSeries {
+  cpu_pct?: MmwxMetricPoint[]
+  mem_used?: MmwxMetricPoint[]
+  load1?: MmwxMetricPoint[]
+  load?: MmwxMetricPoint[]
+  upload_speed?: MmwxMetricPoint[]
+  download_speed?: MmwxMetricPoint[]
+  traffic_up?: MmwxMetricPoint[]
+  traffic_down?: MmwxMetricPoint[]
+}
+
+export interface MmwxMetricPoint {
+  t?: string | number
+  timestamp?: string | number
+  value?: number | string | null
 }
 
 export interface ProbeSeriesPoint {
