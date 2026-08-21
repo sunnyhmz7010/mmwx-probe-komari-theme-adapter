@@ -5,6 +5,7 @@ import type { AppConfig } from '../config.js'
 import { KomariDataService } from '../komari/service.js'
 import type { LoadedTheme } from '../theme/types.js'
 import type { ApiRouter } from './api.js'
+import { dispatchRpc2 } from './api.js'
 import { serveStatic } from './static.js'
 import type { MmwxClient } from '../mmwx/client.js'
 
@@ -32,6 +33,21 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
 
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '/', 'http://adapter.local')
+    if (url.pathname === '/api/rpc2') {
+      clientsWss.handleUpgrade(request, socket, head, (ws) => {
+        clients.add(ws)
+        ws.on('close', () => clients.delete(ws))
+        ws.on('message', async (raw) => {
+          try {
+            const rpc = JSON.parse(raw.toString()) as { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, string | number | boolean | undefined> }
+            ws.send(JSON.stringify(await dispatchRpc2(snapshotService, rpc)))
+          } catch {
+            ws.send(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }))
+          }
+        })
+      })
+      return
+    }
     if (url.pathname === '/api/clients') {
       clientsWss.handleUpgrade(request, socket, head, (ws) => {
         clients.add(ws)

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { KomariDataService } from '../komari/service.js'
+import type { SeriesQuery } from '../mmwx/types.js'
 
 export interface ApiRouter {
   handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>
@@ -12,7 +13,7 @@ interface JsonRpcRequest {
   jsonrpc?: string
   id?: string | number | null
   method?: string
-  params?: Query
+  params?: SeriesQuery
 }
 
 const JSON_HEADERS = {
@@ -95,19 +96,41 @@ async function handleRpc2(service: KomariDataService, request: IncomingMessage, 
   }
 
   const id = rpc.id ?? null
+  return json(response, 200, await dispatchRpc2(service, rpc))
+}
+
+export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcRequest): Promise<unknown> {
+  const id = rpc.id ?? null
   const params = rpc.params ?? {}
-  if (rpc.method === 'nodes.list' || rpc.method === 'public.nodes') {
-    const snapshot = await service.getSnapshot()
-    return json(response, 200, rpcResult(id, snapshot.nodes))
+  try {
+    if (rpc.method === 'rpc.ping') return rpcResult(id, 'pong')
+    if (rpc.method === 'nodes.list' || rpc.method === 'public.nodes' || rpc.method === 'public:getNodesInformation') {
+      const snapshot = await service.getSnapshot()
+      return rpcResult(id, snapshot.nodes)
+    }
+    if (rpc.method === 'public:getPublicSettings') {
+      const snapshot = await service.getSnapshot()
+      return rpcResult(id, { nodes: snapshot.nodes.length })
+    }
+    if (rpc.method === 'common:getNodesLatestStatus' || rpc.method === 'public:getClientRecentRecords') {
+      const snapshot = await service.getSnapshot()
+      return rpcResult(id, Object.fromEntries(snapshot.records.map((record) => [record.uuid, record])))
+    }
+    if (rpc.method === 'records.ping' || rpc.method === 'public:getPingRecords') {
+      return rpcResult(id, await service.getPingHistory(params))
+    }
+    if (rpc.method === 'records.load' || rpc.method === 'public:getRecordsByUUID') {
+      if (!isInternalUuid(params.uuid)) return rpcError(id, -32602, 'Invalid params')
+      return rpcResult(id, await service.getLoadHistory(params.uuid, params))
+    }
+    if (rpc.method === 'public:queryMetrics') {
+      const snapshot = await service.getSnapshot()
+      return rpcResult(id, { nodes: snapshot.nodes, records: snapshot.records })
+    }
+    return rpcError(id, -32601, 'Method not found')
+  } catch (error: unknown) {
+    return rpcError(id, -32000, error instanceof Error ? error.message : 'Upstream error')
   }
-  if (rpc.method === 'records.ping') {
-    return json(response, 200, rpcResult(id, await service.getPingHistory(params)))
-  }
-  if (rpc.method === 'records.load') {
-    if (!isInternalUuid(params.uuid)) return json(response, 200, rpcError(id, -32602, 'Invalid params'))
-    return json(response, 200, rpcResult(id, await service.getLoadHistory(params.uuid, params)))
-  }
-  return json(response, 200, rpcError(id, -32601, 'Method not found'))
 }
 
 function rpcResult(id: JsonRpcRequest['id'], result: unknown): { jsonrpc: '2.0'; id: JsonRpcRequest['id']; result: unknown } {
