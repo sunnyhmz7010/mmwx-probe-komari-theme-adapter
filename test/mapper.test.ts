@@ -74,6 +74,62 @@ test('maps realtime records and preserves offline state', () => {
   assert.equal(record.updated_at, now.toISOString())
 })
 
+test('maps current metrics from real MMWX probe fields', () => {
+  const mmwxServer = server({
+    cpu: undefined,
+    memory: undefined,
+    load: undefined,
+    upload: undefined,
+    download: undefined,
+    uplink: undefined,
+    downlink: undefined,
+    totalUpload: undefined,
+    totalDownload: undefined,
+    trafficPeriod: undefined,
+    cpu_pct: '3.5',
+    loadavg: '0.07 0.09 0.11 1/149 1261978',
+    mem_used: '388132864',
+    mem_total: '1004605440',
+    disk_used: '7899017216',
+    disk_total: '20922114048',
+    upload_speed: '2024',
+    download_speed: '1802',
+    traffic_used_up: '123',
+    traffic_used_down: '456',
+    traffic_used_total: '579',
+    period_start: '2026-08-04',
+    period_end: '2026-09-04',
+  })
+
+  const node = toKomariNode(mmwxServer, 0)
+  const record = toKomariRecord(mmwxServer, 0, now)
+
+  assert.equal(node.cpu, 3.5)
+  assert.equal(node.memory, 388132864)
+  assert.deepEqual(node.load, { load1: 0.07, load5: 0.09, load15: 0.11 })
+  assert.deepEqual(node.network, {
+    up: 2024,
+    down: 1802,
+    totalUp: 123,
+    totalDown: 456,
+    total: 579,
+  })
+  assert.deepEqual(node.ram, { used: 388132864, total: 1004605440 })
+  assert.deepEqual(node.disk, { used: 7899017216, total: 20922114048 })
+  assert.equal(node.traffic_period, '2026-08-04/2026-09-04')
+  assert.deepEqual(record.cpu, { usage: 3.5 })
+  assert.deepEqual(record.ram, { used: 388132864, total: 1004605440 })
+  assert.deepEqual(record.load, { load1: 0.07, load5: 0.09, load15: 0.11 })
+  assert.deepEqual(record.network, {
+    up: 2024,
+    down: 1802,
+    totalUp: 123,
+    totalDown: 456,
+    total: 579,
+  })
+  assert.deepEqual(record.disk, { used: 7899017216, total: 20922114048 })
+})
+
 test('builds ping tasks and preserves null for unavailable buckets', () => {
   const history = toPingHistory([server()], now)
 

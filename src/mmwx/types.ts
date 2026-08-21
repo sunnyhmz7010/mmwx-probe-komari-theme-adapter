@@ -8,13 +8,26 @@ export interface ProbeServer {
   name?: string | null
   host?: string | null
   region?: string | null
+  region_country?: string | null
+  region_name?: string | null
+  region_city?: string | null
+  provider_name?: string | null
+  provider_url?: string | null
   country?: string | null
   online?: boolean | null
   cpu?: number | string | null
+  cpu_pct?: number | string | null
   memory?: number | string | null
+  mem_used?: number | string | null
+  mem_total?: number | string | null
+  disk_used?: number | string | null
+  disk_total?: number | string | null
   load?: number | string | readonly (number | string | null)[] | null
+  loadavg?: string | null
   upload?: number | string | null
+  upload_speed?: number | string | null
   download?: number | string | null
+  download_speed?: number | string | null
   uplink?: number | string | null
   downlink?: number | string | null
   totalUpload?: number | string | null
@@ -39,10 +52,15 @@ export interface ProbeDailyTraffic {
 }
 
 export interface ProbeBucket {
+  key?: string | null
   name?: string | null
+  label?: string | null
   value?: number | string | null
   loss?: number | string | null
   latency?: number | string | null
+  current_ms?: number | string | null
+  loss_pct?: number | string | null
+  buckets?: MmwxProbeSeriesBucket[]
 }
 
 export interface ProbeReturnRoute {

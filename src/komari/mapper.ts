@@ -15,10 +15,15 @@ function firstFinite(values: readonly unknown[]): number | undefined {
   return undefined
 }
 
-function loadAverage(value: ProbeServer['load'] | MmwxSystemSeriesPoint['load']): KomariLoad | undefined {
+function loadAverage(value: ProbeServer['load'] | ProbeServer['loadavg'] | MmwxSystemSeriesPoint['load']): KomariLoad | undefined {
   const load: KomariLoad = {}
   if (Array.isArray(value)) {
     const [load1, load5, load15] = value.map(numberOrUndefined)
+    if (load1 !== undefined) load.load1 = load1
+    if (load5 !== undefined) load.load5 = load5
+    if (load15 !== undefined) load.load15 = load15
+  } else if (typeof value === 'string' && value.trim().includes(' ')) {
+    const [load1, load5, load15] = value.trim().split(/\s+/).map(numberOrUndefined)
     if (load1 !== undefined) load.load1 = load1
     if (load5 !== undefined) load.load5 = load5
     if (load15 !== undefined) load.load15 = load15
@@ -31,19 +36,37 @@ function loadAverage(value: ProbeServer['load'] | MmwxSystemSeriesPoint['load'])
 
 function network(server: ProbeServer): KomariNetwork | undefined {
   const result: KomariNetwork = {}
-  const up = numberOrUndefined(server.upload)
-  const down = numberOrUndefined(server.download)
-  const totalUp = numberOrUndefined(server.totalUpload)
-  const totalDown = numberOrUndefined(server.totalDownload)
+  const up = firstFinite([server.upload, server.upload_speed])
+  const down = firstFinite([server.download, server.download_speed])
+  const totalUp = firstFinite([server.totalUpload, server.traffic_used_up])
+  const totalDown = firstFinite([server.totalDownload, server.traffic_used_down])
+  const total = numberOrUndefined(server.traffic_used_total)
   const uplink = numberOrUndefined(server.uplink)
   const downlink = numberOrUndefined(server.downlink)
   if (up !== undefined) result.up = up
   if (down !== undefined) result.down = down
   if (totalUp !== undefined) result.totalUp = totalUp
   if (totalDown !== undefined) result.totalDown = totalDown
+  if (total !== undefined) result.total = total
   if (uplink !== undefined) result.uplink = uplink
   if (downlink !== undefined) result.downlink = downlink
   return Object.keys(result).length > 0 ? result : undefined
+}
+
+function resource(used: unknown, total: unknown): { used?: number; total?: number } | undefined {
+  const result: { used?: number; total?: number } = {}
+  const usedValue = numberOrUndefined(used)
+  const totalValue = numberOrUndefined(total)
+  if (usedValue !== undefined) result.used = usedValue
+  if (totalValue !== undefined) result.total = totalValue
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+function trafficPeriod(server: ProbeServer): string | undefined {
+  const explicit = server.trafficPeriod?.trim()
+  if (explicit) return explicit
+  if (server.period_start && server.period_end) return `${server.period_start}/${server.period_end}`
+  return undefined
 }
 
 function nodeName(server: ProbeServer, index: number): string {
@@ -57,16 +80,21 @@ export function toKomariNode(server: ProbeServer, index: number): KomariNode {
     online: server.online !== false,
   }
   const region = server.region?.trim() || server.country?.trim()
-  const cpu = numberOrUndefined(server.cpu)
-  const memory = numberOrUndefined(server.memory)
-  const load = loadAverage(server.load)
+  const cpu = firstFinite([server.cpu, server.cpu_pct])
+  const memory = firstFinite([server.memory, server.mem_used])
+  const ram = resource(firstFinite([server.memory, server.mem_used]), server.mem_total)
+  const disk = resource(server.disk_used, server.disk_total)
+  const load = loadAverage(server.load ?? server.loadavg)
   const mappedNetwork = network(server)
   if (region) node.region = region
   if (cpu !== undefined) node.cpu = cpu
   if (memory !== undefined) node.memory = memory
+  if (ram) node.ram = ram
+  if (disk) node.disk = disk
   if (load) node.load = load
   if (mappedNetwork) node.network = mappedNetwork
-  if (server.trafficPeriod) node.traffic_period = server.trafficPeriod
+  const mappedTrafficPeriod = trafficPeriod(server)
+  if (mappedTrafficPeriod) node.traffic_period = mappedTrafficPeriod
   return node
 }
 
@@ -76,19 +104,21 @@ export function toKomariRecord(server: ProbeServer, index: number, now: Date): K
     online: server.online !== false,
     updated_at: now.toISOString(),
   }
-  const cpu = numberOrUndefined(server.cpu)
-  const ram = numberOrUndefined(server.memory)
-  const load = loadAverage(server.load)
+  const cpu = firstFinite([server.cpu, server.cpu_pct])
+  const ram = resource(firstFinite([server.memory, server.mem_used]), server.mem_total)
+  const disk = resource(server.disk_used, server.disk_total)
+  const load = loadAverage(server.load ?? server.loadavg)
   const mappedNetwork = network(server)
   if (cpu !== undefined) record.cpu = { usage: cpu }
-  if (ram !== undefined) record.ram = { used: ram }
+  if (ram) record.ram = ram
+  if (disk) record.disk = disk
   if (load) record.load = load
   if (mappedNetwork) record.network = mappedNetwork
   return record
 }
 
 function bucketValue(bucket: ProbeBucket): number | null {
-  return firstFinite([bucket.value, bucket.latency]) ?? null
+  return firstFinite([bucket.value, bucket.latency, bucket.current_ms]) ?? null
 }
 
 export function toPingHistory(servers: ProbeServer[], now: Date): PingHistory {
@@ -96,7 +126,7 @@ export function toPingHistory(servers: ProbeServer[], now: Date): PingHistory {
   const records = servers.flatMap((server, index) => {
     const client = `mmwx-${index}`
     return (server.ping ?? []).map((bucket) => {
-      const name = bucket.name?.trim() || `Ping ${tasksByName.size + 1}`
+      const name = bucket.name?.trim() || bucket.label?.trim() || bucket.key?.trim() || `Ping ${tasksByName.size + 1}`
       let task = tasksByName.get(name)
       if (!task) {
         task = { id: tasksByName.size, name, clients: [], default_on: true, type: 'icmp', interval: 30 }

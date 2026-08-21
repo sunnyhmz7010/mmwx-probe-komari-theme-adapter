@@ -10,9 +10,16 @@ export interface KomariNode {
   region?: string
   cpu?: number
   memory?: number
+  ram?: KomariResource
+  disk?: KomariResource
   load?: KomariLoad
   network?: KomariNetwork
   traffic_period?: string
+}
+
+export interface KomariResource {
+  used?: number
+  total?: number
 }
 
 export interface KomariLoad {
@@ -26,6 +33,7 @@ export interface KomariNetwork {
   down?: number
   totalUp?: number
   totalDown?: number
+  total?: number
   uplink?: number
   downlink?: number
 }
@@ -35,7 +43,8 @@ export interface KomariRecord {
   online: boolean
   updated_at: string
   cpu?: { usage: number }
-  ram?: { used: number }
+  ram?: KomariResource
+  disk?: KomariResource
   load?: KomariLoad
   network?: KomariNetwork
 }
