@@ -59,6 +59,13 @@ function packageManagerFor(repoDir: string, packageJson: Record<string, unknown>
   throw new Error('Theme package must include pnpm-lock.yaml, bun.lock, bun.lockb, or package-lock.json')
 }
 
+function hasSupportedLockfile(repoDir: string): boolean {
+  return existsSync(repoDir, 'pnpm-lock.yaml')
+    || existsSync(repoDir, 'bun.lockb')
+    || existsSync(repoDir, 'bun.lock')
+    || existsSync(repoDir, 'package-lock.json')
+}
+
 function existsSync(repoDir: string, relative: string): boolean {
   return fsExistsSync(path.join(repoDir, relative))
 }
@@ -71,21 +78,28 @@ function commandFor(manager: Exclude<PackageManager, 'none'>): { installArgs: st
 
 export async function detectBuildPlan(repoDir: string): Promise<BuildPlan> {
   const resolvedRepo = path.resolve(repoDir)
-  if (existsSync(resolvedRepo, 'index.html')) {
-    return { packageManager: 'none', installArgs: [], buildArgs: [], outputCandidates: ['.'] }
-  }
+  const hasRootIndex = existsSync(resolvedRepo, 'index.html')
 
   let packageJson: Record<string, unknown>
   try {
     packageJson = JSON.parse(await readFile(path.join(resolvedRepo, 'package.json'), 'utf8')) as Record<string, unknown>
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error('Theme package.json is not valid JSON')
+    if (hasRootIndex) {
+      return { packageManager: 'none', installArgs: [], buildArgs: [], outputCandidates: ['.'] }
+    }
     throw new Error('Theme repository must contain index.html or package.json')
   }
 
   const scripts = packageJson.scripts
   if (!scripts || typeof scripts !== 'object' || typeof (scripts as Record<string, unknown>).build !== 'string' || !(scripts as Record<string, unknown>).build) {
+    if (hasRootIndex) {
+      return { packageManager: 'none', installArgs: [], buildArgs: [], outputCandidates: ['.'] }
+    }
     throw new Error('Theme package.json must declare a build script')
+  }
+  if (!hasSupportedLockfile(resolvedRepo) && hasRootIndex) {
+    return { packageManager: 'none', installArgs: [], buildArgs: [], outputCandidates: ['.'] }
   }
   const packageManager = packageManagerFor(resolvedRepo, packageJson)
   const commands = commandFor(packageManager)

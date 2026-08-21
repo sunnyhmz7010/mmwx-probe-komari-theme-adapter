@@ -32,6 +32,37 @@ test('uses the repository root when it already contains index.html', async () =>
   }
 })
 
+test('builds a package theme when the repository root also contains source index.html', async () => {
+  const repoDir = await packageFixture({
+    'index.html': '<!doctype html><script type="module" src="/src/main.tsx"></script>',
+    'package.json': JSON.stringify({ scripts: { build: 'build' } }),
+    'package-lock.json': '{}',
+  })
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    assert.equal(plan.packageManager, 'npm')
+    assert.deepEqual(plan.outputCandidates, ['dist', 'build', 'out', 'public', '.'])
+  } finally {
+    await rm(repoDir, { recursive: true, force: true })
+  }
+})
+
+test('keeps root static fallback when package theme lacks a lockfile', async () => {
+  const repoDir = await packageFixture({
+    'index.html': '<!doctype html>',
+    'package.json': JSON.stringify({ scripts: { build: 'build' } }),
+  })
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    assert.equal(plan.packageManager, 'none')
+    assert.deepEqual(plan.outputCandidates, ['.'])
+  } finally {
+    await rm(repoDir, { recursive: true, force: true })
+  }
+})
+
 test('selects pnpm, bun, then npm by lockfile priority', async () => {
   const cases = [
     ['pnpm', 'pnpm-lock.yaml'],
