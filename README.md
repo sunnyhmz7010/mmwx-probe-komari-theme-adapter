@@ -1,27 +1,24 @@
 <div align="center">
   <h1>MMWX Probe Komari Theme Adapter</h1>
-  <p>将 MMWX 探针数据适配为可运行 Komari 主题的容器服务。</p>
+  <p>将 妙妙屋 X 探针数据适配为可运行 Komari 主题的容器服务</p>
 </div>
 
 <p align="center">
   <a href="https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter/releases"><img src="https://img.shields.io/github/v/release/sunnyhmz7010/mmwx-probe-komari-theme-adapter?label=Release&color=3b82f6" alt="Release" /></a>
   <a href="https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sunnyhmz7010/mmwx-probe-komari-theme-adapter?color=10b981" alt="License" /></a>
-  <a href="https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter/actions/workflows/docker.yml"><img src="https://img.shields.io/github/actions/workflow/status/sunnyhmz7010/mmwx-probe-komari-theme-adapter/docker.yml?branch=main&label=Docker" alt="Docker" /></a>
-  <a href="https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter/pkgs/container/mmwx-probe-komari-theme-adapter"><img src="https://img.shields.io/badge/GHCR-mmwx--probe--komari--theme--adapter-0f172a" alt="GHCR" /></a>
 </p>
 
 ---
 
 ## ✨ 为什么做这个项目
 
-MMWX independent-probe 已经能提供节点状态和历史数据，但很多现成的 Komari 主题依赖 Komari 的公开 API 和 WebSocket 路径。这个适配器在容器启动时拉取并构建指定 Komari 主题，同时把 MMWX 探针接口映射成只读的 Komari 兼容接口，让主题可以直接复用而不需要改主题源码。
+这个适配器在容器启动时拉取并构建指定 Komari 主题，同时把 MMWX 探针接口映射成只读的 Komari 兼容接口，让主题可以直接复用而不需要改主题源码。
 
 ## 🚀 核心能力
 
 - Komari 主题运行时构建：启动时拉取 GitHub 主题仓库，自动识别静态主题或包构建产物
-- MMWX 数据适配：把 independent-probe 数据映射为 Komari 风格节点、实时状态、Ping 和负载历史
+- MMWX 数据适配：把 mmwx-probe 数据映射为 Komari 风格节点、实时状态、Ping 和负载历史
 - 只读兼容边界：提供公开 API 和 WebSocket 兼容路径，明确拒绝登录、管理、修改类接口
-- 安全配置校验：生产环境强制 `MMWX_ORIGIN` 使用 HTTPS，探针 Token 仅转发给 MMWX
 - 容器化部署：提供 GitHub Container Registry 镜像和 Docker Compose 示例
 - 持久化主题产物：挂载 `/data` 后，构建完成的主题可跨容器重启保留
 
@@ -29,14 +26,14 @@ MMWX independent-probe 已经能提供节点状态和历史数据，但很多现
 
 ### 📋 前置要求
 
-- 一台能访问 MMWX 控制端和 GitHub 的服务器、NAS 或本地 Docker 环境
+- 一台能访问 妙妙屋 X 主控和 GitHub 的服务器、NAS 或本地 Docker 环境
 - Docker 与 Docker Compose
-- MMWX independent-probe 可用的控制端地址和 `PROBE_TOKEN`
+- 妙妙屋 X 主控 HTTPS 地址和访问密钥
 - 一个可公开拉取的 Komari 主题 GitHub 仓库
 
 ### 📦 Docker Compose（推荐）
 
-新建 `docker-compose.yml`：
+新建 `compose.yaml`：
 
 ```yaml
 services:
@@ -69,15 +66,7 @@ docker compose logs -f
 
 访问 `http://localhost:8080` 查看主题页面。
 
-### 🏷️ 镜像标签
-
-GitHub Actions 会把镜像推送到 `ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter`。`main` 分支生成 `main` 和 `sha-*` 标签；推送 `v*` 标签时生成 `0.1.0`、`0.1`、`0` 和 `latest` 这类稳定标签。
-
-```bash
-docker pull ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
-```
-
-### 🖥️ Docker Run
+### 🖥️ 命令行方式
 
 ```bash
 docker run -d \
