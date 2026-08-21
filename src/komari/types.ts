@@ -51,6 +51,7 @@ export interface PingHistoryRecord {
   task_id: number
   time: string
   value: number | null
+  loss?: number | null
   client: string
 }
 

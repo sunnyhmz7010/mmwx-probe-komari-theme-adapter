@@ -1,5 +1,5 @@
 import type { ProbePayload, ProbeSeriesPayload, SeriesQuery } from '../mmwx/types.js'
-import { toKomariNode, toKomariRecord, toLoadHistory, toPingHistory } from './mapper.js'
+import { toKomariNode, toKomariRecord, toLoadHistory, toPingSeriesHistory } from './mapper.js'
 import type { KomariSnapshot, LoadHistory, PingHistory } from './types.js'
 
 interface DataClient {
@@ -41,13 +41,22 @@ export class KomariDataService {
     return (await this.getSnapshotValue()).snapshot
   }
 
+  public async getProbePayload(): Promise<ProbePayload> {
+    return (await this.getSnapshotValue()).payload
+  }
+
+  public async getSeriesPayload(query: SeriesQuery): Promise<ProbeSeriesPayload> {
+    return await this.getSeries(query)
+  }
+
   public async getPingHistory(query: SeriesQuery): Promise<PingHistory> {
-    const cached = await this.getSnapshotValue()
-    return toPingHistory(cached.payload.servers, new Date())
+    const payload = await this.getSeries(seriesQuery(query))
+    if (payload.pings) return toPingSeriesHistory(payload.pings)
+    return { count: 0, records: [], tasks: [], basic_info: { clients: [] } }
   }
 
   public async getLoadHistory(uuid: string, query: SeriesQuery): Promise<LoadHistory> {
-    const payload = await this.getSeries({ ...query, uuid })
+    const payload = await this.getSeries(seriesQuery(query, { metric: 'system' }))
     const index = Number(uuid.replace(/^mmwx-/, ''))
     const series = payload.systems?.find((item) => Number(item.serverId) === index) ?? payload.systems?.[0] ?? { serverId: index, points: [] }
     return toLoadHistory({ ...series, serverId: index })
@@ -112,4 +121,9 @@ function stableKey(query: SeriesQuery): string {
   return JSON.stringify(Object.entries(query)
     .filter(([, value]) => value !== undefined)
     .sort(([left], [right]) => left.localeCompare(right)))
+}
+
+function seriesQuery(query: SeriesQuery, override: SeriesQuery = {}): SeriesQuery {
+  const { uuid: _uuid, task_id: _taskId, load_type: _loadType, ...upstreamQuery } = query
+  return { ...upstreamQuery, ...override }
 }

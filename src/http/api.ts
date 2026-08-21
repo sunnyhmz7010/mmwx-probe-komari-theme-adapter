@@ -35,6 +35,12 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
         }
 
         if (request.method !== 'GET') return methodNotAllowed(response)
+        if (url.pathname === '/api/probe') {
+          return json(response, 200, await service.getProbePayload())
+        }
+        if (url.pathname === '/api/series') {
+          return json(response, 200, await service.getSeriesPayload(queryFrom(url)))
+        }
         if (url.pathname === '/api/nodes') {
           const snapshot = await service.getSnapshot()
           return json(response, 200, envelope(snapshot.nodes))

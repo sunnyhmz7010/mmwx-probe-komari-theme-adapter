@@ -1,4 +1,4 @@
-import type { MmwxSystemSeries, MmwxSystemSeriesPoint, ProbeBucket, ProbeServer } from '../mmwx/types.js'
+import type { MmwxSystemSeries, MmwxSystemSeriesPoint, ProbeBucket, ProbePingSeries, ProbeServer } from '../mmwx/types.js'
 import type { KomariLoad, KomariNetwork, KomariNode, KomariRecord, LoadHistory, LoadHistoryRecord, PingHistory, PingTask } from './types.js'
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -117,6 +117,41 @@ export function toPingHistory(servers: ProbeServer[], now: Date): PingHistory {
     records,
     tasks: [...tasksByName.values()],
     basic_info: { clients: servers.map((_, index) => `mmwx-${index}`) },
+  }
+}
+
+export function toPingSeriesHistory(pings: readonly ProbePingSeries[]): PingHistory {
+  const tasksByName = new Map<string, PingTask>()
+  const clients = new Set<string>()
+  const records = pings.flatMap((series) => {
+    const client = `mmwx-${serverIndex(series.serverId)}`
+    clients.add(client)
+    const name = series.route?.trim() || `Ping ${tasksByName.size + 1}`
+    let task = tasksByName.get(name)
+    if (!task) {
+      task = { id: tasksByName.size, name, clients: [], default_on: true, type: 'icmp', interval: 30 }
+      tasksByName.set(name, task)
+    }
+    if (!task.clients.includes(client)) task.clients.push(client)
+    return series.points.map((point) => ({
+      task_id: task.id,
+      time: new Date(point.timestamp).toISOString(),
+      value: firstFinite([point.value]) ?? null,
+      loss: firstFinite([point.loss]) ?? null,
+      client,
+    }))
+  }).sort((left, right) => {
+    const timeDiff = new Date(left.time).getTime() - new Date(right.time).getTime()
+    if (timeDiff !== 0) return timeDiff
+    if (left.task_id !== right.task_id) return left.task_id - right.task_id
+    return left.client.localeCompare(right.client)
+  })
+
+  return {
+    count: records.length,
+    records,
+    tasks: [...tasksByName.values()],
+    basic_info: { clients: [...clients].sort() },
   }
 }
 

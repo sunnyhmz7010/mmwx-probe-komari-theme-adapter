@@ -145,19 +145,38 @@ test('caches snapshots, deduplicates concurrent requests, and serves a short sta
   ))
 })
 
-test('serves ping history from the cached probe snapshot without dropping buckets', async () => {
+test('serves ping history from cached MMWX series without dropping points', async () => {
+  let calls = 0
   const client = {
     fetchProbe: async () => ({ servers: [server()] }),
-    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => {
+      calls += 1
+      return {
+        pings: [
+          {
+            serverId: 0,
+            route: 'Google',
+            points: [
+              { timestamp: '2026-08-21T00:00:00.000Z', value: 25 },
+              { timestamp: '2026-08-21T00:01:00.000Z', value: null, loss: 100 },
+            ],
+          },
+        ],
+      }
+    },
   }
   const service = new KomariDataService(client, 1000)
 
-  const history = await service.getPingHistory({ hours: 1 })
+  const first = await service.getPingHistory({ hours: 1 })
+  const second = await service.getPingHistory({ hours: 1 })
 
-  assert.equal(history.count, 2)
-  assert.equal(history.records[0].value, 25)
-  assert.equal(history.records[1].value, null)
-  assert.deepEqual(history.tasks.map((task) => task.name), ['Google', 'Cloudflare'])
+  assert.equal(calls, 1)
+  assert.deepEqual(second, first)
+  assert.equal(first.count, 2)
+  assert.equal(first.records[0].value, 25)
+  assert.equal(first.records[1].value, null)
+  assert.equal(first.records[1].loss, 100)
+  assert.deepEqual(first.tasks.map((task) => task.name), ['Google'])
 })
 
 test('caches series by normalized query key and resolves the requested node history', async () => {

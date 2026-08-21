@@ -20,8 +20,22 @@ export interface ProbeServer {
   totalUpload?: number | string | null
   totalDownload?: number | string | null
   trafficPeriod?: string | null
+  daily_traffic?: ProbeDailyTraffic[] | null
+  traffic_used_up?: number | string | null
+  traffic_used_down?: number | string | null
+  traffic_used_total?: number | string | null
+  traffic_used?: number | string | null
+  period_start?: string | number | null
+  period_end?: string | number | null
   ping?: ProbeBucket[] | null
   routes?: ProbeReturnRoute[] | null
+}
+
+export interface ProbeDailyTraffic {
+  date?: string | null
+  uplink?: number | string | null
+  downlink?: number | string | null
+  total?: number | string | null
 }
 
 export interface ProbeBucket {

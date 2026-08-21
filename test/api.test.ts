@@ -4,7 +4,8 @@ import http from 'node:http'
 import { test } from 'node:test'
 
 import { createApiRouter } from '../src/http/api.js'
-import type { KomariDataService } from '../src/komari/service.js'
+import { KomariDataService } from '../src/komari/service.js'
+import type { ProbePayload, ProbeSeriesPayload, SeriesQuery } from '../src/mmwx/types.js'
 
 interface TestResponse {
   status: number
@@ -14,6 +15,22 @@ interface TestResponse {
 
 function fakeService(overrides: Partial<KomariDataService> = {}): KomariDataService {
   return {
+    getProbePayload: async () => ({
+      servers: [{
+        name: 'node-0',
+        online: true,
+        daily_traffic: [{ date: '2026-08-21', uplink: 1, downlink: 2, total: 3 }],
+        traffic_used_up: 1,
+        traffic_used_down: 2,
+        traffic_used_total: 3,
+        period_start: '2026-08-01T00:00:00.000Z',
+        period_end: '2026-09-01T00:00:00.000Z',
+      }],
+    } as ProbePayload),
+    getSeriesPayload: async () => ({
+      pings: [{ serverId: 0, route: 'Google', points: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 10, loss: 0 }] }],
+      systems: [{ serverId: 0, points: [{ timestamp: '2026-08-21T00:00:00.000Z', cpu: 1 }] }],
+    } as ProbeSeriesPayload),
     getSnapshot: async () => ({
       nodes: [{ uuid: 'mmwx-0', name: 'node-0', online: true }],
       records: [{ uuid: 'mmwx-0', online: true, updated_at: '2026-08-21T00:00:00.000Z' }],
@@ -29,7 +46,7 @@ function fakeService(overrides: Partial<KomariDataService> = {}): KomariDataServ
       records: [{ client: 'mmwx-0', time: '2026-08-21T00:00:00.000Z', cpu: 1 }],
     }),
     ...overrides,
-  } as KomariDataService
+  } as unknown as KomariDataService
 }
 
 async function withApi(service: KomariDataService, run: (baseUrl: string) => Promise<void>): Promise<void> {
@@ -88,6 +105,55 @@ test('API routes return Komari-compatible public resources', async () => {
   })
 })
 
+test('API routes expose MMWX probe-compatible fixed HTTP paths', async () => {
+  const seen: unknown[] = []
+  await withApi(fakeService({
+    getProbePayload: async () => {
+      seen.push(['probe'])
+      return {
+        servers: [{
+          name: 'node-0',
+          online: true,
+          daily_traffic: [{ date: '2026-08-21', uplink: 1, downlink: 2, total: 3 }],
+          traffic_used_up: 1,
+          traffic_used_down: 2,
+          traffic_used_total: 3,
+          period_start: '2026-08-01T00:00:00.000Z',
+          period_end: '2026-09-01T00:00:00.000Z',
+        }],
+      } as ProbePayload
+    },
+    getSeriesPayload: async (query: SeriesQuery) => {
+      seen.push(['series', query])
+      return { pings: [], systems: [] }
+    },
+  } as Partial<KomariDataService>), async (baseUrl) => {
+    const probe = await request(baseUrl, '/api/probe')
+    assert.equal(probe.status, 200)
+    assertJsonHeaders(probe)
+    assert.deepEqual(probe.body, {
+      servers: [{
+        name: 'node-0',
+        online: true,
+        daily_traffic: [{ date: '2026-08-21', uplink: 1, downlink: 2, total: 3 }],
+        traffic_used_up: 1,
+        traffic_used_down: 2,
+        traffic_used_total: 3,
+        period_start: '2026-08-01T00:00:00.000Z',
+        period_end: '2026-09-01T00:00:00.000Z',
+      }],
+    })
+
+    const series = await request(baseUrl, '/api/series?hours=24&metric=system')
+    assert.equal(series.status, 200)
+    assert.deepEqual(series.body, { pings: [], systems: [] })
+    assert.deepEqual(seen, [
+      ['probe'],
+      ['series', { hours: '24', metric: 'system' }],
+    ])
+  })
+})
+
 test('API routes return ping and load history with validated UUIDs', async () => {
   const seen: unknown[] = []
   await withApi(fakeService({
@@ -114,6 +180,75 @@ test('API routes return ping and load history with validated UUIDs', async () =>
       ['ping', { hours: '1' }],
       ['load', 'mmwx-0', { uuid: 'mmwx-0', hours: '1' }],
     ])
+  })
+})
+
+test('Komari load history requests system metrics from the MMWX series API', async () => {
+  const seen: SeriesQuery[] = []
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [] }),
+    fetchSeries: async (query: SeriesQuery) => {
+      seen.push(query)
+      return {
+        systems: [{
+          serverId: 0,
+          points: [{ timestamp: '2026-08-21T00:00:00.000Z', cpu: 12, memory: 34, upload: 56, download: 78 }],
+        }],
+      }
+    },
+  }, 1000)
+
+  const history = await service.getLoadHistory('mmwx-0', { uuid: 'mmwx-0', hours: '24' })
+
+  assert.deepEqual(seen, [{ hours: '24', metric: 'system' }])
+  assert.deepEqual(history.records, [{
+    client: 'mmwx-0',
+    time: '2026-08-21T00:00:00.000Z',
+    cpu: 12,
+    ram: 34,
+    net_out: 56,
+    net_in: 78,
+  }])
+})
+
+test('Komari ping history uses latency and loss points from the MMWX series API', async () => {
+  const seen: SeriesQuery[] = []
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [{ name: 'node-0' }, { name: 'node-1' }] }),
+    fetchSeries: async (query: SeriesQuery) => {
+      seen.push(query)
+      return {
+        pings: [
+          {
+            serverId: 0,
+            route: 'Google',
+            points: [
+              { timestamp: '2026-08-21T00:00:00.000Z', value: 10, loss: 0 },
+              { timestamp: '2026-08-21T00:01:00.000Z', value: 11, loss: 1 },
+            ],
+          },
+          {
+            serverId: 1,
+            route: 'Google',
+            points: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 20, loss: 2 }],
+          },
+        ],
+      }
+    },
+  }, 1000)
+
+  const history = await service.getPingHistory({ uuid: 'mmwx-0', task_id: '0', hours: '24' })
+
+  assert.deepEqual(seen, [{ hours: '24' }])
+  assert.deepEqual(history, {
+    count: 3,
+    records: [
+      { task_id: 0, time: '2026-08-21T00:00:00.000Z', value: 10, loss: 0, client: 'mmwx-0' },
+      { task_id: 0, time: '2026-08-21T00:00:00.000Z', value: 20, loss: 2, client: 'mmwx-1' },
+      { task_id: 0, time: '2026-08-21T00:01:00.000Z', value: 11, loss: 1, client: 'mmwx-0' },
+    ],
+    tasks: [{ id: 0, name: 'Google', clients: ['mmwx-0', 'mmwx-1'], default_on: true, type: 'icmp', interval: 30 }],
+    basic_info: { clients: ['mmwx-0', 'mmwx-1'] },
   })
 })
 
