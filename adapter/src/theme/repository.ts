@@ -69,8 +69,8 @@ export function resolveThemeRef(value: string): string {
   return value
 }
 
-function isCommitRef(ref: string): boolean {
-  return /^[0-9a-f]{40}$/i.test(ref)
+export function isCommitRef(ref: string): boolean {
+  return /^[0-9a-f]{7,40}$/i.test(ref)
 }
 
 export async function acquireTheme(source: ThemeSource, targetDir: string): Promise<string> {

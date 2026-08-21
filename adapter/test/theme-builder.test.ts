@@ -122,3 +122,27 @@ test('rejects output symlink escapes and missing index.html', async () => {
     await rm(outputDir, { recursive: true, force: true })
   }
 })
+
+test('rejects nested symlink escapes under an in-repository output symlink', async () => {
+  const outsideDir = await fixture()
+  const repoDir = await packageFixture({
+    'package.json': JSON.stringify({ scripts: { build: 'build' } }),
+    'package-lock.json': '{}',
+  })
+  const outputDir = await fixture()
+
+  try {
+    await writeFile(path.join(outsideDir, 'leaked.txt'), 'outside')
+    await mkdir(path.join(repoDir, 'actual-dist', 'assets'), { recursive: true })
+    await writeFile(path.join(repoDir, 'actual-dist', 'index.html'), '<main>theme</main>')
+    await symlink(outsideDir, path.join(repoDir, 'actual-dist', 'assets', 'escape'), 'junction')
+    await symlink(path.join(repoDir, 'actual-dist'), path.join(repoDir, 'dist'), 'junction')
+
+    const plan = await detectBuildPlan(repoDir)
+    await assert.rejects(() => buildTheme({ ...plan, packageManager: 'none' }, repoDir, outputDir), /symlink|containment/i)
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true })
+    await rm(repoDir, { recursive: true, force: true })
+    await rm(outputDir, { recursive: true, force: true })
+  }
+})

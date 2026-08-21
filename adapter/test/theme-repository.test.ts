@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { parseGitHubRepo, resolveThemeRef } from '../src/theme/repository.js'
+import { isCommitRef, parseGitHubRepo, resolveThemeRef } from '../src/theme/repository.js'
 
 test('parses the supported GitHub repository URL forms', () => {
   assert.deepEqual(parseGitHubRepo('https://github.com/acme/komari-theme'), {
@@ -38,4 +38,12 @@ test('preserves a safe theme ref exactly and rejects shell metacharacters', () =
   for (const value of ['', ' main', 'main ', 'main;rm', 'main&&echo', 'main`id`', 'main$HOME', '--upload-pack=x']) {
     assert.throws(() => resolveThemeRef(value), /THEME_REF/)
   }
+})
+
+test('recognizes short and full commit-like refs', () => {
+  assert.equal(isCommitRef('abc1234'), true)
+  assert.equal(isCommitRef('0123456789abcdef0123456789abcdef01234567'), true)
+  assert.equal(isCommitRef('abc123'), false)
+  assert.equal(isCommitRef('0123456789abcdef0123456789abcdef012345678'), false)
+  assert.equal(isCommitRef('release-1'), false)
 })

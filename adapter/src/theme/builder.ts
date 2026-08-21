@@ -99,14 +99,16 @@ function isWithin(parent: string, candidate: string): boolean {
 
 async function verifyTree(root: string, repoRoot: string): Promise<void> {
   const entry = await lstat(root)
+  let scanRoot = root
   if (entry.isSymbolicLink()) {
     const target = await realpath(root)
     if (!isWithin(repoRoot, target)) throw new Error(`Theme output symlink escapes repository: ${root}`)
+    scanRoot = target
+  } else if (!entry.isDirectory()) {
     return
   }
-  if (!entry.isDirectory()) return
-  for (const child of await readdir(root)) {
-    await verifyTree(path.join(root, child), repoRoot)
+  for (const child of await readdir(scanRoot)) {
+    await verifyTree(path.join(scanRoot, child), repoRoot)
   }
 }
 
