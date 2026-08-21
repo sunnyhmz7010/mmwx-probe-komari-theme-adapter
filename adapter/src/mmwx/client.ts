@@ -24,6 +24,16 @@ export class UpstreamError extends Error {
 export class MmwxClient {
   public constructor(private readonly config: AppConfig) {}
 
+  public streamUrl(): string {
+    return this.wsUrl()
+  }
+
+  public probeHeaders(): Record<string, string> {
+    return {
+      'X-MMwx-Probe-Token': this.config.probeToken,
+    }
+  }
+
   public async fetchProbe(): Promise<ProbePayload> {
     return this.fetchJson<ProbePayload>(PROBE_PATH)
   }
@@ -34,9 +44,7 @@ export class MmwxClient {
 
   public openStream(onMessage: (payload: ProbePayload) => void, onClose: () => void): Closeable {
     const ws = new WebSocket(this.wsUrl(), {
-      headers: {
-        'X-MMwx-Probe-Token': this.config.probeToken,
-      },
+      headers: this.probeHeaders(),
     })
 
     let closed = false
