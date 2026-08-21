@@ -1,0 +1,21 @@
+{
+  "repository": "stqfdyr/komari-theme-adhesive-note",
+  "ref": "8ac4fd2fe4fb4cabde84ddc31c8cd9e9df966914",
+  "observed": {
+    "http": [
+      "POST /api/rpc2"
+    ],
+    "websocket": [
+      "GET /api/rpc2"
+    ],
+    "rpc2": [
+      "public:getNodesInformation",
+      "public:getPublicSettings",
+      "public:getClientRecentRecords",
+      "public:getRecordsByUUID",
+      "public:getPingRecords",
+      "common:getNodesLatestStatus",
+      "rpc.ping"
+    ]
+  }
+}

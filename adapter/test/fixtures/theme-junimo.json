@@ -1,0 +1,26 @@
+{
+  "repository": "vaspike/junimo",
+  "ref": "8c899e1f1601600bfd8bc83f40d4538ee39b8944",
+  "observed": {
+    "http": [
+      "GET /api/me",
+      "GET /api/public",
+      "GET /api/nodes",
+      "GET /api/records/load?uuid=mmwx-0&hours=1",
+      "GET /api/records/ping?uuid=mmwx-0&hours=1",
+      "GET /api/records/ping?task_id=0&hours=1",
+      "POST /api/rpc2"
+    ],
+    "websocket": [
+      "GET /api/rpc2"
+    ],
+    "rpc2": [
+      "public:queryMetrics",
+      "public:getNodesInformation",
+      "public:getClientRecentRecords",
+      "public:getRecordsByUUID",
+      "public:getPingRecords",
+      "rpc.ping"
+    ]
+  }
+}
