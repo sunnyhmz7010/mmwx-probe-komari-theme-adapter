@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { ProbePayload, ProbeSeriesPayload, ProbeServer } from '../src/mmwx/types.js'
-import { toKomariNode, toKomariRecord, toLoadHistory, toPingHistory } from '../src/komari/mapper.js'
+import { toKomariNode, toKomariPublicNodes, toKomariRecord, toLoadHistory, toPingHistory, toSystemMetricHistory } from '../src/komari/mapper.js'
 import { KomariDataService } from '../src/komari/service.js'
 
 const now = new Date('2026-08-21T00:00:00.000Z')
@@ -128,6 +128,70 @@ test('maps current metrics from real MMWX probe fields', () => {
     total: 579,
   })
   assert.deepEqual(record.disk, { used: 7899017216, total: 20922114048 })
+})
+
+test('maps public node fallback fields and traffic mode aliases', () => {
+  const [node] = toKomariPublicNodes({
+    servers: [server({
+      cpu_name: undefined,
+      cpu_model: 'AMD EPYC 7B13',
+      kernel_version: undefined,
+      kernel: '6.1.0-34-amd64',
+      gpu_name: undefined,
+      virtualization: undefined,
+      expired_at: undefined,
+      expires_at: '2026-09-21T00:00:00.000Z',
+      traffic_limit_type: undefined,
+      traffic_stats_mode: 'both',
+    })],
+  })
+
+  assert.equal(node.cpu_name, 'AMD EPYC 7B13')
+  assert.equal(node.kernel_version, '6.1.0-34-amd64')
+  assert.equal(node.gpu_name, 'None')
+  assert.equal(node.virtualization, 'unknown')
+  assert.equal(node.expired_at, '2026-09-21T00:00:00.000Z')
+  assert.equal(node.traffic_limit_type, 'sum')
+})
+
+test('maps system metrics with separate realtime and cumulative network fields', () => {
+  const history = toSystemMetricHistory({
+    cpu_pct: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 3.5 }],
+    mem_used: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 256 }],
+    mem_total: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 1024 }],
+    swap_used: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 64 }],
+    swap_total: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 128 }],
+    disk_used: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 10240 }],
+    disk_total: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 20480 }],
+    load1: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 0.2 }],
+    upload_speed: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 12 }],
+    download_speed: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 34 }],
+    cumulative_up: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 567 }],
+    cumulative_down: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 890 }],
+    process: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 99 }],
+    connections: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 11 }],
+    connections_udp: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 2 }],
+  }, 0)
+
+  assert.deepEqual(history.records, [{
+    client: 'mmwx-0',
+    time: '2026-08-21T00:00:00.000Z',
+    cpu: 3.5,
+    ram: 256,
+    mem_total: 1024,
+    swap: 64,
+    swap_total: 128,
+    load: 0.2,
+    disk: 10240,
+    disk_total: 20480,
+    net_out: 12,
+    net_in: 34,
+    net_total_up: 567,
+    net_total_down: 890,
+    process: 99,
+    connections: 11,
+    connections_udp: 2,
+  }])
 })
 
 test('builds ping tasks and preserves null for unavailable buckets', () => {

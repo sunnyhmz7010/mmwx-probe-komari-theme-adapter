@@ -8,12 +8,14 @@ export interface ProbeServer {
   name?: string | null
   host?: string | null
   cpu_name?: string | null
+  cpu_model?: string | null
   virtualization?: string | null
   arch?: string | null
   cpu_cores?: number | string | null
   cpu_physical_cores?: number | string | null
   os?: string | null
   kernel_version?: string | null
+  kernel?: string | null
   gpu_name?: string | null
   gpu?: number | string | null
   region?: string | null
@@ -52,6 +54,9 @@ export interface ProbeServer {
   traffic_used_down?: number | string | null
   traffic_used_total?: number | string | null
   traffic_used?: number | string | null
+  cumulative_up?: number | string | null
+  cumulative_down?: number | string | null
+  traffic_stats_mode?: string | null
   period_start?: string | number | null
   period_end?: string | number | null
   process?: number | string | null
@@ -64,6 +69,7 @@ export interface ProbeServer {
   auto_renewal?: boolean | null
   currency?: string | null
   expired_at?: string | number | null
+  expires_at?: string | number | null
   group?: string | null
   tags?: string | null
   hidden?: boolean | null
@@ -111,7 +117,7 @@ export interface SeriesQuery {
   range?: string
   metric?: string
   all?: number | string
-  [key: string]: string | number | boolean | undefined
+  [key: string]: string | number | boolean | readonly string[] | readonly number[] | undefined
 }
 
 export interface ProbeSeriesPayload {
@@ -146,12 +152,24 @@ export interface MmwxProbeSeriesBucket {
 export interface MmwxSystemMetricSeries {
   cpu_pct?: MmwxMetricPoint[]
   mem_used?: MmwxMetricPoint[]
+  mem_total?: MmwxMetricPoint[]
+  swap_used?: MmwxMetricPoint[]
+  swap_total?: MmwxMetricPoint[]
+  disk_used?: MmwxMetricPoint[]
+  disk_total?: MmwxMetricPoint[]
   load1?: MmwxMetricPoint[]
+  load5?: MmwxMetricPoint[]
+  load15?: MmwxMetricPoint[]
   load?: MmwxMetricPoint[]
   upload_speed?: MmwxMetricPoint[]
   download_speed?: MmwxMetricPoint[]
   traffic_up?: MmwxMetricPoint[]
   traffic_down?: MmwxMetricPoint[]
+  cumulative_up?: MmwxMetricPoint[]
+  cumulative_down?: MmwxMetricPoint[]
+  process?: MmwxMetricPoint[]
+  connections?: MmwxMetricPoint[]
+  connections_udp?: MmwxMetricPoint[]
 }
 
 export interface MmwxMetricPoint {
@@ -178,4 +196,20 @@ export interface MmwxSystemSeriesPoint {
   load?: number | string | readonly (number | string | null)[] | null
   upload?: number | string | null
   download?: number | string | null
+  upload_speed?: number | string | null
+  download_speed?: number | string | null
+  mem_total?: number | string | null
+  swap?: number | string | null
+  swap_total?: number | string | null
+  disk_used?: number | string | null
+  disk_total?: number | string | null
+  net_total_up?: number | string | null
+  net_total_down?: number | string | null
+  cumulative_up?: number | string | null
+  cumulative_down?: number | string | null
+  traffic_up?: number | string | null
+  traffic_down?: number | string | null
+  process?: number | string | null
+  connections?: number | string | null
+  connections_udp?: number | string | null
 }

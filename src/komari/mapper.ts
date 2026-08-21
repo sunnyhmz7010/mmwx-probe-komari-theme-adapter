@@ -56,8 +56,8 @@ function network(server: ProbeServer): KomariNetwork | undefined {
   const result: KomariNetwork = {}
   const up = firstFinite([server.upload, server.upload_speed])
   const down = firstFinite([server.download, server.download_speed])
-  const totalUp = firstFinite([server.totalUpload, server.traffic_used_up])
-  const totalDown = firstFinite([server.totalDownload, server.traffic_used_down])
+  const totalUp = firstFinite([server.totalUpload, server.net_total_up, server.cumulative_up, server.traffic_used_up])
+  const totalDown = firstFinite([server.totalDownload, server.net_total_down, server.cumulative_down, server.traffic_used_down])
   const total = numberOrUndefined(server.traffic_used_total)
   const uplink = numberOrUndefined(server.uplink)
   const downlink = numberOrUndefined(server.downlink)
@@ -288,8 +288,18 @@ export function toSystemMetricHistory(series: MmwxSystemMetricSeries, serverInde
   applyMetric(series.cpu_pct, (record, value) => { record.cpu = value })
   applyMetric(series.mem_used, (record, value) => { record.ram = value })
   applyMetric(series.load1 ?? series.load, (record, value) => { record.load = value })
-  applyMetric(series.upload_speed ?? series.traffic_up, (record, value) => { record.net_out = value })
-  applyMetric(series.download_speed ?? series.traffic_down, (record, value) => { record.net_in = value })
+  applyMetric(series.mem_total, (record, value) => { record.mem_total = value })
+  applyMetric(series.swap_used, (record, value) => { record.swap = value })
+  applyMetric(series.swap_total, (record, value) => { record.swap_total = value })
+  applyMetric(series.disk_used, (record, value) => { record.disk = value })
+  applyMetric(series.disk_total, (record, value) => { record.disk_total = value })
+  applyMetric(series.upload_speed, (record, value) => { record.net_out = value })
+  applyMetric(series.download_speed, (record, value) => { record.net_in = value })
+  applyMetric(series.cumulative_up ?? series.traffic_up, (record, value) => { record.net_total_up = value })
+  applyMetric(series.cumulative_down ?? series.traffic_down, (record, value) => { record.net_total_down = value })
+  applyMetric(series.process, (record, value) => { record.process = value })
+  applyMetric(series.connections, (record, value) => { record.connections = value })
+  applyMetric(series.connections_udp, (record, value) => { record.connections_udp = value })
 
   const records = [...byTime.entries()]
     .sort(([left], [right]) => left - right)
@@ -351,13 +361,13 @@ export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): Ko
   return payload.servers.map((server, index) => ({
     uuid: `mmwx-${index}`,
     name: nodeName(server, index),
-    cpu_name: stringOrDefault(server.cpu_name, 'Unknown CPU'),
+    cpu_name: stringOrDefault(server.cpu_name ?? server.cpu_model, 'Unknown CPU'),
     virtualization: stringOrDefault(server.virtualization, 'unknown'),
     arch: stringOrDefault(server.arch, 'amd64'),
     cpu_cores: numberOrUndefined(server.cpu_cores) ?? 1,
     cpu_physical_cores: numberOrUndefined(server.cpu_physical_cores) ?? 1,
     os: stringOrDefault(server.os, 'Linux'),
-    kernel_version: stringOrDefault(server.kernel_version, 'unknown'),
+    kernel_version: stringOrDefault(server.kernel_version ?? server.kernel, 'unknown'),
     gpu_name: stringOrDefault(server.gpu_name, 'None'),
     region: regionLabel(server),
     mem_total: numberOrUndefined(server.mem_total) ?? 0,
@@ -368,18 +378,30 @@ export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): Ko
     billing_cycle: numberOrUndefined(server.billing_cycle) ?? 30,
     auto_renewal: boolOrDefault(server.auto_renewal, false),
     currency: stringOrDefault(server.currency, '$'),
-    expired_at: server.expired_at === null || server.expired_at === undefined || server.expired_at === ''
+    expired_at: isEmptyDateValue(server.expired_at ?? server.expires_at)
       ? NEVER_EXPIRES
-      : dateTimeOrDefault(server.expired_at, new Date(0)),
+      : dateTimeOrDefault(server.expired_at ?? server.expires_at, new Date(0)),
     group: stringOrDefault(server.group, ''),
     tags: stringOrDefault(server.tags, ''),
     hidden: boolOrDefault(server.hidden, false),
     traffic_limit: numberOrUndefined(server.traffic_limit) ?? 0,
-    traffic_limit_type: stringOrDefault(server.traffic_limit_type, 'max'),
+    traffic_limit_type: trafficLimitType(server),
     created_at: dateTimeOrDefault(server.created_at, now),
     updated_at: dateTimeOrDefault(server.updated_at, now),
     public_remark: publicRemark(server),
   }))
+}
+
+function trafficLimitType(server: ProbeServer): string {
+  const raw = stringOrDefault(server.traffic_limit_type ?? server.traffic_stats_mode, 'max').toLowerCase()
+  if (raw === 'both') return 'sum'
+  if (raw === 'upload') return 'up'
+  if (raw === 'download') return 'down'
+  return raw || 'max'
+}
+
+function isEmptyDateValue(value: unknown): boolean {
+  return value === null || value === undefined || value === ''
 }
 
 export function toKomariNodeStatusMap(payload: ProbePayload, now = new Date()): KomariNodeStatusMap {
@@ -405,10 +427,10 @@ export function toKomariNodeStatus(server: ProbeServer, index: number, now = new
     disk_total: numberOrUndefined(server.disk_total) ?? 0,
     net_in: firstFinite([server.download, server.download_speed]) ?? 0,
     net_out: firstFinite([server.upload, server.upload_speed]) ?? 0,
-    net_total_up: firstFinite([server.net_total_up, server.totalUpload, server.traffic_used_up]) ?? 0,
-    net_total_down: firstFinite([server.net_total_down, server.totalDownload, server.traffic_used_down]) ?? 0,
-    net_total_out: firstFinite([server.net_total_up, server.totalUpload, server.traffic_used_up]) ?? 0,
-    net_total_down_alt: firstFinite([server.net_total_down, server.totalDownload, server.traffic_used_down]) ?? 0,
+    net_total_up: firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
+    net_total_down: firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
+    net_total_out: firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
+    net_total_down_alt: firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
     process: numberOrUndefined(server.process) ?? 0,
     connections: numberOrUndefined(server.connections) ?? 0,
     connections_udp: numberOrUndefined(server.connections_udp) ?? 0,
@@ -449,20 +471,20 @@ function enrichLoadRecord(record: LoadHistoryRecord): KomariLoadRecord {
     cpu: record.cpu ?? 0,
     gpu: 0,
     ram: record.ram ?? 0,
-    ram_total: 0,
-    swap: 0,
-    swap_total: 0,
+    ram_total: record.mem_total ?? 0,
+    swap: record.swap ?? 0,
+    swap_total: record.swap_total ?? 0,
     load: record.load ?? 0,
     temp: 0,
-    disk: 0,
-    disk_total: 0,
+    disk: record.disk ?? 0,
+    disk_total: record.disk_total ?? 0,
     net_in: record.net_in ?? 0,
     net_out: record.net_out ?? 0,
-    net_total_up: 0,
-    net_total_down: 0,
-    process: 0,
-    connections: 0,
-    connections_udp: 0,
+    net_total_up: record.net_total_up ?? 0,
+    net_total_down: record.net_total_down ?? 0,
+    process: record.process ?? 0,
+    connections: record.connections ?? 0,
+    connections_udp: record.connections_udp ?? 0,
   }
 }
 

@@ -1,6 +1,6 @@
 <div align="center">
   <h1>MMWX Probe Komari Theme Adapter</h1>
-  <p>用 Docker 暴露妙妙屋 X 探针，并运行 Komari 主题页面。</p>
+  <p>将已部署支持独立探针访问密钥的妙妙屋 X 主控，转换为 Komari 主题可直接读取的只读探针前端。</p>
 </div>
 
 <p align="center">
@@ -22,6 +22,7 @@
 - 独立密钥保护：`PROBE_TOKEN` 只保存在容器环境变量中，浏览器无法读取访问密钥
 - Komari 主题复用：启动时拉取并构建指定 Komari 主题，将 MMWX 探针数据映射为主题常用的只读接口
 - 历史指标支持：`/api/series` 返回 24 小时延迟、丢包率历史，追加 `metric=system` 获取 CPU、内存、网速和累计流量序列
+- 主题接口兼容：补齐 `common:getNodes`、`common:getRecords`、`public:queryMetrics`、`public:getPingMetricStats`、`public:getPublicPingTasks` 等主题常用 RPC
 - 流量字段保留：`/api/probe` 保留 `daily_traffic`、`traffic_used_up`、`traffic_used_down`、`traffic_used_total`、`period_start`、`period_end` 等主控字段
 - WebSocket 实时更新：`/api/stream` 代理主控实时探针流，供前端主题获取实时状态
 - 轻量容器化：提供 GHCR 多架构镜像和 Docker Compose 示例，运行阶段使用非 root 用户
@@ -175,15 +176,44 @@ docker compose up -d --force-recreate
 - `rpc.ping`
 - `public:getNodesInformation`
 - `public:getPublicSettings`
+- `common:getNodes`
+- `common:getRecords`
 - `common:getNodesLatestStatus`
 - `public:getClientRecentRecords`
 - `public:getRecordsByUUID`
 - `public:getPingRecords`
 - `public:queryMetrics`
+- `public:getPingMetricStats`
+- `public:getPublicPingTasks`
 - `nodes.list`
 - `public.nodes`
 - `records.ping`
 - `records.load`
+
+`public:queryMetrics` 的返回结构为：
+
+```json
+{
+  "start": "2026-08-21T00:00:00.000Z",
+  "end": "2026-08-21T12:00:00.000Z",
+  "count": 3,
+  "series": [
+    {
+      "metric_key": "cpu.usage",
+      "entity_id": "mmwx-0",
+      "interval_seconds": 300,
+      "points": [
+        { "time": "2026-08-21T12:00:00.000Z", "value": 12.5, "count": 1 }
+      ]
+    }
+  ]
+}
+```
+
+`common:getRecords` 会按 `type` 兼容两类返回：
+
+- `type=load`：返回负载、内存、磁盘和网络统计记录
+- `type=ping`：返回 Ping 记录、任务列表和客户端列表
 
 登录、后台管理、主题管理、节点修改等写操作不在兼容范围内。
 
@@ -221,6 +251,7 @@ docker compose logs -f mmwx-komari-adapter
 
 - 页面能打开但没有服务器：检查主控探针设置中是否选择了需要展示的服务器，并确认 `PROBE_TOKEN` 与主控生成的密钥一致
 - 页面有服务器但曲线为空：检查 `/api/series` 是否返回数据；系统指标需要请求 `/api/series?metric=system`
+- 页面有服务器但仍为空数据：确认主题依赖的 RPC（尤其是 `common:getNodes`、`common:getRecords`、`public:queryMetrics`）已经返回非空结果
 - `/api/series` 返回 `502`：容器无法从主控 `/api/public/probe-series` 获取历史数据，通常是主控探针历史不可用、密钥不一致、主控地址错误或主控阻断了容器访问
 - `/api/probe` 返回 `502`：容器无法从主控 `/api/public/probe-servers` 获取服务器状态
 - 页面没有实时更新：检查反向代理、防火墙和主控是否允许 WebSocket；路径为 `/api/stream`
@@ -232,6 +263,7 @@ docker compose logs -f mmwx-komari-adapter
 - 固定上游路径：HTTP 探针数据只请求 `/api/public/probe-servers` 和 `/api/public/probe-series`，实时流只请求 `/api/public/probe-ws`
 - 查询参数透传：`/api/series` 会透传 `hours`、`metric` 等查询参数，但不会允许访客覆盖主控地址
 - 历史数据映射：Komari 的 `/api/records/ping` 和 `/api/records/load` 会把 `uuid=mmwx-0`、`hours=24` 转换为主控需要的 `server=0`、`range=24h`，其中系统指标固定追加 `metric=system`
+- 主题 RPC 映射：`common:getNodes`、`common:getRecords`、`public:queryMetrics`、`public:getPingMetricStats`、`public:getPublicPingTasks` 都会从同一份探针快照和历史序列生成只读结果，避免主题直接依赖主控后台
 - 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程

@@ -120,6 +120,9 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
     if (rpc.method === 'public:getPublicSettings') {
       return rpcResult(id, await service.getPublicSettings())
     }
+    if (rpc.method === 'common:getNodes') {
+      return rpcResult(id, await service.getNodes())
+    }
     if (rpc.method === 'common:getNodesLatestStatus') {
       return rpcResult(id, await service.getNodesLatestStatus())
     }
@@ -135,6 +138,9 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
       }
       return rpcResult(id, await service.getPingHistory(params))
     }
+    if (rpc.method === 'common:getRecords') {
+      return rpcResult(id, await service.getRecords(params))
+    }
     if (rpc.method === 'records.load' || rpc.method === 'public:getRecordsByUUID') {
       if (!isInternalUuid(params.uuid)) return rpcError(id, -32602, 'Invalid params')
       if (rpc.method === 'public:getRecordsByUUID') {
@@ -143,8 +149,13 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
       return rpcResult(id, await service.getLoadHistory(params.uuid, params))
     }
     if (rpc.method === 'public:queryMetrics') {
-      const snapshot = await service.getSnapshot()
-      return rpcResult(id, { nodes: snapshot.nodes, records: snapshot.records })
+      return rpcResult(id, await service.getQueryMetrics(params))
+    }
+    if (rpc.method === 'public:getPingMetricStats') {
+      return rpcResult(id, await service.getPingMetricStats(params))
+    }
+    if (rpc.method === 'public:getPublicPingTasks') {
+      return rpcResult(id, await service.getPublicPingTasks(params))
     }
     return rpcError(id, -32601, 'Method not found')
   } catch (error: unknown) {

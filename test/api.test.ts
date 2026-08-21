@@ -501,3 +501,200 @@ test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-not
     assert.deepEqual(pingResp.body, { jsonrpc: '2.0', id: 16, result: pingRecords })
   })
 })
+
+test('RPC2 supports Junimo metric and common compatibility methods', async () => {
+  const node = {
+    uuid: 'mmwx-0',
+    token: 'hidden-token',
+    name: 'node-0',
+    cpu_name: 'Intel Xeon',
+    virtualization: 'kvm',
+    arch: 'amd64',
+    cpu_cores: 2,
+    cpu_physical_cores: 2,
+    os: 'Debian GNU/Linux 12 (bookworm)',
+    kernel_version: '6.1.0',
+    gpu_name: 'None',
+    ipv4: '10.0.0.2',
+    ipv6: '::1',
+    region: '🇺🇸',
+    remark: 'private',
+    public_remark: 'public remark',
+    mem_total: 8 * 1024 ** 3,
+    swap_total: 2 * 1024 ** 3,
+    disk_total: 50 * 1024 ** 3,
+    version: 'v1.2.3',
+    weight: 10,
+    price: 9.5,
+    billing_cycle: 30,
+    auto_renewal: true,
+    currency: '$',
+    expired_at: '2026-09-21T00:00:00.000Z',
+    group: 'default',
+    tags: 'prod;edge',
+    hidden: false,
+    traffic_limit: 1024 ** 4,
+    traffic_limit_type: 'sum',
+    created_at: '2026-08-01T00:00:00.000Z',
+    updated_at: '2026-08-21T00:00:00.000Z',
+  }
+
+  await withApi(fakeService({
+    getNodes: async () => ({ [node.uuid]: node }),
+    getNodesLatestStatus: async () => ({
+      [node.uuid]: {
+        client: node.uuid,
+        time: '2026-08-21T12:00:00.000Z',
+        cpu: 12.5,
+        gpu: 0,
+        ram: 3 * 1024 ** 3,
+        ram_total: 8 * 1024 ** 3,
+        swap: 128 * 1024 ** 2,
+        swap_total: 2 * 1024 ** 3,
+        load: 0.42,
+        load5: 0.3,
+        load15: 0.2,
+        temp: 36.5,
+        disk: 20 * 1024 ** 3,
+        disk_total: 50 * 1024 ** 3,
+        net_in: 1024,
+        net_out: 2048,
+        net_total_up: 111,
+        net_total_down: 222,
+        process: 88,
+        connections: 24,
+        connections_udp: 2,
+        online: true,
+        uptime: 123456,
+      },
+    }),
+    getRecords: async () => ({
+      count: 2,
+      records: [{
+        client: node.uuid,
+        time: '2026-08-21T11:55:00.000Z',
+        cpu: 12.5,
+        gpu: 0,
+        ram: 3 * 1024 ** 3,
+        ram_total: 0,
+        swap: 128 * 1024 ** 2,
+        swap_total: 0,
+        load: 0.42,
+        temp: 36.5,
+        disk: 20 * 1024 ** 3,
+        disk_total: 0,
+        net_in: 1024,
+        net_out: 2048,
+        net_total_up: 111,
+        net_total_down: 222,
+        process: 88,
+        connections: 24,
+        connections_udp: 2,
+      }],
+      tasks: [{
+        id: 0,
+        name: 'Google',
+        type: 'icmp',
+        interval: 60,
+        default_on: true,
+        total: 2,
+        loss: 50,
+        min: 18,
+        max: 20,
+        avg: 19,
+      }],
+      from: '2026-08-21T11:00:00.000Z',
+      to: '2026-08-21T12:00:00.000Z',
+    }),
+    getQueryMetrics: async () => ({
+      start: '2026-08-21T00:00:00.000Z',
+      end: '2026-08-21T12:00:00.000Z',
+      count: 3,
+      series: [
+        {
+          metric_key: 'cpu.usage',
+          entity_id: node.uuid,
+          interval_seconds: 300,
+          points: [{ time: '2026-08-21T12:00:00.000Z', value: 12.5, count: 1 }],
+        },
+        {
+          metric_key: 'traffic.up',
+          entity_id: node.uuid,
+          interval_seconds: 300,
+          points: [{ time: '2026-08-21T12:00:00.000Z', value: 1234, count: 1 }],
+        },
+        {
+          metric_key: 'traffic.down',
+          entity_id: node.uuid,
+          interval_seconds: 300,
+          points: [{ time: '2026-08-21T12:00:00.000Z', value: 5678, count: 1 }],
+        },
+      ],
+    }),
+    getPingMetricStats: async () => ({
+      count: 1,
+      stats: [{
+        entity_id: node.uuid,
+        task_id: 0,
+        name: 'Google',
+        type: 'icmp',
+        interval: 60,
+        total: 2,
+        valid: 1,
+        loss: 50,
+        min: 18,
+        max: 20,
+        avg: 19,
+        latest: 20,
+        p50: 19,
+        p99: 20,
+        stddev: 1,
+        p99_p50_ratio: 1,
+      }],
+    }),
+    getPublicPingTasks: async () => ([{
+      id: 0,
+      name: 'Google',
+      clients: [node.uuid],
+      default_on: true,
+      type: 'icmp',
+      interval: 60,
+      target: 'google.com',
+    }]),
+  }), async (baseUrl) => {
+    const nodes = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'common:getNodes' }),
+    })
+    assert.equal(nodes.status, 200)
+    assert.deepEqual(nodes.body, { jsonrpc: '2.0', id: 20, result: { [node.uuid]: node } })
+
+    const records = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 21, method: 'common:getRecords', params: { uuid: node.uuid, type: 'load', hours: 4 } }),
+    })
+    assert.equal(records.status, 200)
+    assert.equal((records.body as { result?: { count?: number } }).result?.count, 2)
+
+    const metrics = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 22, method: 'public:queryMetrics', params: { metric_keys: ['cpu.usage', 'traffic.up', 'traffic.down'], entity_ids: [node.uuid], hours: 24 } }),
+    })
+    assert.equal(metrics.status, 200)
+    assert.equal((metrics.body as { result?: { series?: Array<{ metric_key?: string }> } }).result?.series?.[0]?.metric_key, 'cpu.usage')
+
+    const pingStats = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 23, method: 'public:getPingMetricStats', params: { entity_ids: [node.uuid], task_ids: [0], hours: 24 } }),
+    })
+    assert.equal(pingStats.status, 200)
+    assert.equal((pingStats.body as { result?: { stats?: Array<{ loss?: number }> } }).result?.stats?.[0]?.loss, 50)
+
+    const pingTasks = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 24, method: 'public:getPublicPingTasks' }),
+    })
+    assert.equal(pingTasks.status, 200)
+    assert.equal((pingTasks.body as { result?: Array<{ name?: string }> }).result?.[0]?.name, 'Google')
+  })
+})

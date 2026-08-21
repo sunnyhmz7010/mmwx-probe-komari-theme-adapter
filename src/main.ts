@@ -16,12 +16,6 @@ export async function start(): Promise<ServerHandle> {
   const api = createApiRouter(service)
   const server = createHttpServer(config, theme, api, mmwx)
   await server.listen()
-  logger.info('MMWX Komari adapter started', {
-    repository: theme.source.repoUrl,
-    ref: theme.source.ref,
-    output: theme.directory,
-    port: config.port,
-  })
   return server
 }
 

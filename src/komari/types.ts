@@ -137,6 +137,17 @@ export interface KomariLoadRecords {
   gpu_devices?: string[]
 }
 
+export interface KomariCommonRecords {
+  count: number
+  records: Array<KomariLoadRecord | KomariPingRecord>
+  has_gpu_data?: boolean
+  gpu_devices?: string[]
+  from?: string
+  to?: string
+  tasks?: KomariPingRecordTask[]
+  basic_info?: { clients: string[] }
+}
+
 export interface KomariPingRecord {
   task_id: number
   time: string
@@ -155,6 +166,50 @@ export interface KomariPingRecordTask {
   min: number
   max: number
   avg: number
+}
+
+export interface KomariMetricPoint {
+  time: string
+  value: number | null
+  count: number
+}
+
+export interface KomariMetricSeries {
+  metric_key: string
+  entity_id: string
+  interval_seconds: number
+  points: KomariMetricPoint[]
+}
+
+export interface KomariQueryMetrics {
+  start?: string
+  end?: string
+  count: number
+  series: KomariMetricSeries[]
+}
+
+export interface KomariPingMetricStat {
+  entity_id: string
+  task_id: number
+  name: string
+  type: string
+  interval: number
+  total: number
+  valid: number
+  loss: number
+  min: number
+  max: number
+  avg: number
+  latest: number | null
+  p50: number | null
+  p99: number | null
+  stddev: number | null
+  p99_p50_ratio: number | null
+}
+
+export interface KomariPingMetricStats {
+  count: number
+  stats: KomariPingMetricStat[]
 }
 
 export interface KomariPingRecords {
@@ -234,6 +289,10 @@ export interface PingTask {
   interval: number
 }
 
+export interface KomariPublicPingTask extends PingTask {
+  target?: string
+}
+
 export interface LoadHistory {
   count: number
   records: LoadHistoryRecord[]
@@ -247,6 +306,16 @@ export interface LoadHistoryRecord {
   load?: number
   net_out?: number
   net_in?: number
+  net_total_up?: number
+  net_total_down?: number
+  swap?: number
+  swap_total?: number
+  mem_total?: number
+  disk?: number
+  disk_total?: number
+  process?: number
+  connections?: number
+  connections_udp?: number
 }
 
 export interface AdapterError extends Error {
