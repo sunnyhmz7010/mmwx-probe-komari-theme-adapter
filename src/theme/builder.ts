@@ -3,6 +3,7 @@ import { cp, lstat, mkdir, readFile, realpath, readdir, rm } from 'node:fs/promi
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 
+import { noopLogger, type Logger } from '../log.js'
 import type { BuildPlan, PackageManager } from './types.js'
 
 const OUTPUT_CANDIDATES = ['dist', 'build', 'out', 'public', '.'] as const
@@ -13,7 +14,7 @@ interface SpawnResult {
   stderr: string
 }
 
-function spawnFile(file: string, args: readonly string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<SpawnResult> {
+function spawnFile(file: string, args: readonly string[], options: { cwd: string; env: NodeJS.ProcessEnv }, logger: Logger, phase: string): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(file, [...args], {
       cwd: options.cwd,
@@ -25,8 +26,18 @@ function spawnFile(file: string, args: readonly string[], options: { cwd: string
     let stderr = ''
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => { stdout += chunk })
-    child.stderr.on('data', (chunk: string) => { stderr += chunk })
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk
+      for (const line of chunk.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
+        logger.info(`${phase}: ${line}`)
+      }
+    })
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk
+      for (const line of chunk.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
+        logger.warn(`${phase}: ${line}`)
+      }
+    })
     child.once('error', reject)
     child.once('close', (code, signal) => {
       if (code === 0) {
@@ -153,19 +164,28 @@ async function findOutput(repoDir: string, candidates: readonly string[]): Promi
   throw new Error('Theme output must contain index.html in dist, build, out, public, or the repository root')
 }
 
-export async function buildTheme(plan: BuildPlan, repoDir: string, outputDir: string): Promise<string> {
+export async function buildTheme(plan: BuildPlan, repoDir: string, outputDir: string, logger: Logger = noopLogger): Promise<string> {
   const resolvedRepo = path.resolve(repoDir)
   const resolvedOutput = path.resolve(outputDir)
+  logger.info('主题构建开始', { packageManager: plan.packageManager })
   if (plan.packageManager !== 'none') {
     const executable = process.platform === 'win32' ? `${plan.packageManager}.cmd` : plan.packageManager
     const options = { cwd: resolvedRepo, env: buildEnvironment() }
-    await spawnFile(executable, plan.installArgs, options)
-    await spawnFile(executable, plan.buildArgs, options)
+    logger.info('主题依赖安装开始', { command: `${executable} ${plan.installArgs.join(' ')}` })
+    await spawnFile(executable, plan.installArgs, options, logger, '主题依赖安装')
+    logger.info('主题依赖安装完成')
+    logger.info('主题构建命令开始', { command: `${executable} ${plan.buildArgs.join(' ')}` })
+    await spawnFile(executable, plan.buildArgs, options, logger, '主题构建命令')
+    logger.info('主题构建命令完成')
+  } else {
+    logger.info('主题构建跳过依赖安装和构建命令')
   }
 
   const selected = await findOutput(resolvedRepo, plan.outputCandidates)
+  logger.info('主题构建产物已确定', { path: selected })
   await rm(resolvedOutput, { recursive: true, force: true })
   await mkdir(resolvedOutput, { recursive: true })
   await cp(selected, resolvedOutput, { recursive: true, dereference: true })
+  logger.info('主题构建完成', { output: resolvedOutput })
   return resolvedOutput
 }

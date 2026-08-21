@@ -118,12 +118,24 @@ test('copies only an allowed output directory with index.html', async () => {
     'dist/index.html': '<main>theme</main>',
   })
   const outputDir = await fixture()
+  const logs: string[] = []
+  const logger = {
+    info(message: string) { logs.push(`info:${message}`) },
+    warn(message: string) { logs.push(`warn:${message}`) },
+    error(message: string) { logs.push(`error:${message}`) },
+  }
 
   try {
     const plan = await detectBuildPlan(repoDir)
     assert.deepEqual(plan.outputCandidates, ['dist', 'build', 'out', 'public', '.'])
-    assert.equal(await buildTheme({ ...plan, packageManager: 'none' }, repoDir, outputDir), outputDir)
+    assert.equal(await buildTheme({ ...plan, packageManager: 'none' }, repoDir, outputDir, logger), outputDir)
     assert.equal(await readFile(path.join(outputDir, 'index.html'), 'utf8'), '<main>theme</main>')
+    assert.deepEqual(logs, [
+      'info:主题构建开始',
+      'info:主题构建跳过依赖安装和构建命令',
+      'info:主题构建产物已确定',
+      'info:主题构建完成',
+    ])
   } finally {
     await rm(repoDir, { recursive: true, force: true })
     await rm(outputDir, { recursive: true, force: true })

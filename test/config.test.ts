@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { loadConfig } from '../src/config.js'
+import { describeConfig, loadConfig } from '../src/config.js'
 import { logError, logInfo } from '../src/log.js'
 
 function isConfigError(error: unknown): error is { message: string; name: string } {
@@ -62,6 +62,28 @@ test('loads defaults and normalizes the origin', () => {
     cacheTtlMs: 5000,
     dataDir: '/data',
   })
+})
+
+test('describes the complete startup configuration without exposing the probe token', () => {
+  const config = loadConfig({
+    ...validEnv,
+    THEME_REF: 'v1.2.3',
+    THEME_BUILD: 'npm run build',
+    PORT: '9090',
+    CACHE_TTL: '12',
+    DATA_DIR: './runtime-data',
+  })
+
+  const summary = describeConfig(config)
+  assert.match(summary, /MMWX_ORIGIN=https:\/\/panel\.example\.com/)
+  assert.match(summary, /PROBE_TOKEN=\[REDACTED\]/)
+  assert.match(summary, /THEME_REPO=https:\/\/github\.com\/example\/theme/)
+  assert.match(summary, /THEME_REF=v1\.2\.3/)
+  assert.match(summary, /THEME_BUILD=npm run build/)
+  assert.match(summary, /PORT=9090/)
+  assert.match(summary, /CACHE_TTL=12s/)
+  assert.match(summary, /DATA_DIR=.*runtime-data/)
+  assert.equal(summary.includes(validEnv.PROBE_TOKEN), false)
 })
 
 test('accepts overrides and resolves DATA_DIR', () => {

@@ -11,6 +11,19 @@ export interface AppConfig {
   dataDir: string
 }
 
+export function describeConfig(config: AppConfig): string {
+  return [
+    `MMWX_ORIGIN=${config.mmwxOrigin}`,
+    'PROBE_TOKEN=[REDACTED]',
+    `THEME_REPO=${config.themeRepo}`,
+    `THEME_REF=${config.themeRef}`,
+    `THEME_BUILD=${config.themeBuild || 'auto'}`,
+    `PORT=${config.port}`,
+    `CACHE_TTL=${config.cacheTtlMs / 1000}s`,
+    `DATA_DIR=${config.dataDir}`,
+  ].join(' ')
+}
+
 export class ConfigError extends Error {
   public constructor(message: string) {
     super(message)

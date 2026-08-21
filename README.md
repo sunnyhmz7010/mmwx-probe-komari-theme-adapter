@@ -25,6 +25,7 @@
 - 流量字段保留：`/api/probe` 保留 `daily_traffic`、`traffic_used_up`、`traffic_used_down`、`traffic_used_total`、`period_start`、`period_end` 等主控字段
 - WebSocket 实时更新：`/api/stream` 代理主控实时探针流，供前端主题获取实时状态
 - 轻量容器化：提供 GHCR 多架构镜像和 Docker Compose 示例，运行阶段使用非 root 用户
+- 正式版本发布：仅推送 `v*` Git tag 时构建并发布镜像，`latest` 始终指向最近一次正式 Release
 
 ## ⚡ 快速开始
 
@@ -108,6 +109,31 @@ docker run -d \
 
 如果使用 Docker Compose 本地构建，把 `compose.yaml` 中的 `image: ghcr.io/...` 换成 `build: .`，然后执行 `docker compose up -d --build`。
 
+### 📌 镜像版本与发布
+
+Docker workflow 仅响应 `v*` tag，不会因 `main` 分支提交自动构建镜像。发布 `v1.0.0` 后会生成：
+
+```text
+ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1.0.0
+ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1.0
+ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1
+ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
+```
+
+发布示例：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+生产环境建议使用明确版本号；使用 `latest` 时，更新容器前需要主动拉取镜像：
+
+```bash
+docker compose pull
+docker compose up -d --force-recreate
+```
+
 ## 📖 使用说明
 
 ### 📡 工作方式
@@ -178,6 +204,15 @@ docker run -d \
 
 ```bash
 docker compose logs -f
+```
+
+容器启动日志会输出脱敏后的完整解析配置，并实时记录主题仓库拉取、依赖安装、主题构建命令、构建输出、产物发布和失败原因。`PROBE_TOKEN` 只显示为 `[REDACTED]`。
+
+常用查看命令：
+
+```bash
+docker compose logs --tail=200 mmwx-komari-adapter
+docker compose logs -f mmwx-komari-adapter
 ```
 
 容器内 `/data` 用于保存当前构建完成的主题目录。建议始终挂载 Docker volume，避免容器重建后重复拉取和构建主题。

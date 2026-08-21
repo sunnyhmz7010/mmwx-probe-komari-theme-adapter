@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 
+import { noopLogger, type Logger } from '../log.js'
 import type { ThemeSource } from './types.js'
 
 interface SpawnResult {
@@ -73,19 +74,22 @@ export function isCommitRef(ref: string): boolean {
   return /^[0-9a-f]{7,40}$/i.test(ref)
 }
 
-export async function acquireTheme(source: ThemeSource, targetDir: string): Promise<string> {
+export async function acquireTheme(source: ThemeSource, targetDir: string, logger: Logger = noopLogger): Promise<string> {
   const repo = parseGitHubRepo(source.repoUrl)
   const ref = resolveThemeRef(source.ref)
   const repoUrl = `https://github.com/${repo.owner}/${repo.name}.git`
   const resolvedTarget = path.resolve(targetDir)
 
   await mkdir(path.dirname(resolvedTarget), { recursive: true })
+  logger.info('主题仓库克隆开始', { repository: source.repoUrl, ref: source.ref })
   if (isCommitRef(ref)) {
     await spawnFile('git', ['clone', '--depth', '1', repoUrl, resolvedTarget])
+    logger.info('主题 commit 获取开始', { ref })
     await spawnFile('git', ['fetch', '--depth', '1', 'origin', ref], resolvedTarget)
     await spawnFile('git', ['checkout', '--detach', ref], resolvedTarget)
   } else {
     await spawnFile('git', ['clone', '--depth', '1', '--branch', ref, repoUrl, resolvedTarget])
   }
+  logger.info('主题仓库克隆完成', { path: resolvedTarget })
   return resolvedTarget
 }

@@ -1,25 +1,27 @@
-import { loadConfig } from './config.js'
+import { describeConfig, loadConfig } from './config.js'
 import { MmwxClient } from './mmwx/client.js'
 import { createApiRouter } from './http/api.js'
 import { createHttpServer, type ServerHandle } from './http/server.js'
 import { KomariDataService } from './komari/service.js'
-import { logError, logInfo } from './log.js'
+import { createLogger, logError, logInfo } from './log.js'
 import { loadTheme } from './theme/loader.js'
 
 export async function start(): Promise<ServerHandle> {
   const config = loadConfig(process.env)
-  const theme = await loadTheme(config)
+  const logger = createLogger([config.probeToken])
+  logger.info(`启动配置：${describeConfig(config)}`)
+  const theme = await loadTheme(config, logger)
   const mmwx = new MmwxClient(config)
   const service = new KomariDataService(mmwx, config.cacheTtlMs)
   const api = createApiRouter(service)
   const server = createHttpServer(config, theme, api, mmwx)
   await server.listen()
-  logInfo('MMWX Komari adapter started', {
+  logger.info('MMWX Komari adapter started', {
     repository: theme.source.repoUrl,
     ref: theme.source.ref,
     output: theme.directory,
     port: config.port,
-  }, [config.probeToken])
+  })
   return server
 }
 
