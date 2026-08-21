@@ -111,22 +111,35 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
   try {
     if (rpc.method === 'rpc.ping') return rpcResult(id, 'pong')
     if (rpc.method === 'nodes.list' || rpc.method === 'public.nodes' || rpc.method === 'public:getNodesInformation') {
+      if (rpc.method === 'public:getNodesInformation') {
+        return rpcResult(id, await service.getNodesInformation())
+      }
       const snapshot = await service.getSnapshot()
       return rpcResult(id, snapshot.nodes)
     }
     if (rpc.method === 'public:getPublicSettings') {
-      const snapshot = await service.getSnapshot()
-      return rpcResult(id, { nodes: snapshot.nodes.length })
+      return rpcResult(id, await service.getPublicSettings())
     }
-    if (rpc.method === 'common:getNodesLatestStatus' || rpc.method === 'public:getClientRecentRecords') {
-      const snapshot = await service.getSnapshot()
-      return rpcResult(id, Object.fromEntries(snapshot.records.map((record) => [record.uuid, record])))
+    if (rpc.method === 'common:getNodesLatestStatus') {
+      return rpcResult(id, await service.getNodesLatestStatus())
+    }
+    if (rpc.method === 'public:getClientRecentRecords') {
+      return rpcResult(id, await service.getClientRecentRecords())
+    }
+    if (rpc.method === 'public:getVersion') {
+      return rpcResult(id, await service.getVersion())
     }
     if (rpc.method === 'records.ping' || rpc.method === 'public:getPingRecords') {
+      if (rpc.method === 'public:getPingRecords') {
+        return rpcResult(id, await service.getPingRecords(params))
+      }
       return rpcResult(id, await service.getPingHistory(params))
     }
     if (rpc.method === 'records.load' || rpc.method === 'public:getRecordsByUUID') {
       if (!isInternalUuid(params.uuid)) return rpcError(id, -32602, 'Invalid params')
+      if (rpc.method === 'public:getRecordsByUUID') {
+        return rpcResult(id, await service.getLoadRecords(params.uuid, params))
+      }
       return rpcResult(id, await service.getLoadHistory(params.uuid, params))
     }
     if (rpc.method === 'public:queryMetrics') {

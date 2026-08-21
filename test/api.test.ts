@@ -13,7 +13,7 @@ interface TestResponse {
   body: unknown
 }
 
-function fakeService(overrides: Partial<KomariDataService> = {}): KomariDataService {
+function fakeService(overrides: Record<string, unknown> = {}): KomariDataService {
   return {
     getProbePayload: async () => ({
       servers: [{
@@ -304,5 +304,200 @@ test('RPC2 supports read-only public methods and rejects unknown or mutating met
     })
     assert.equal(unknown.status, 200)
     assert.deepEqual(unknown.body, { jsonrpc: '2.0', id: 3, error: { code: -32601, message: 'Method not found' } })
+  })
+})
+
+test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-note', async () => {
+  const node = {
+    uuid: 'mmwx-0',
+    name: 'node-0',
+    cpu_name: 'Intel(R) Xeon(R) CPU E5-2697 v2 @ 2.70GHz',
+    virtualization: 'kvm',
+    arch: 'amd64',
+    cpu_cores: 2,
+    cpu_physical_cores: 2,
+    os: 'Debian GNU/Linux 12 (bookworm)',
+    kernel_version: '6.1.0-52-amd64',
+    gpu_name: 'None',
+    region: '🇺🇸',
+    mem_total: 8 * 1024 ** 3,
+    swap_total: 2 * 1024 ** 3,
+    disk_total: 50 * 1024 ** 3,
+    weight: 10,
+    price: 9.5,
+    billing_cycle: 30,
+    auto_renewal: true,
+    currency: '$',
+    expired_at: '2026-09-21T00:00:00.000Z',
+    group: 'default',
+    tags: 'prod,edge',
+    hidden: false,
+    traffic_limit: 1024 ** 4,
+    traffic_limit_type: 'max',
+    created_at: '2026-08-01T00:00:00.000Z',
+    updated_at: '2026-08-21T00:00:00.000Z',
+    public_remark: 'main node',
+  }
+  const status = {
+    client: node.uuid,
+    time: '2026-08-21T12:00:00.000Z',
+    cpu: 12.5,
+    gpu: 0,
+    ram: 3 * 1024 ** 3,
+    ram_total: 8 * 1024 ** 3,
+    swap: 128 * 1024 ** 2,
+    swap_total: 2 * 1024 ** 3,
+    load: 0.42,
+    load5: 0.3,
+    load15: 0.2,
+    temp: 36.5,
+    disk: 20 * 1024 ** 3,
+    disk_total: 50 * 1024 ** 3,
+    net_in: 1024,
+    net_out: 2048,
+    net_total_up: 111,
+    net_total_down: 222,
+    process: 88,
+    connections: 24,
+    connections_udp: 2,
+    online: true,
+    uptime: 123456,
+  }
+  const recent = [{
+    uuid: node.uuid,
+    cpu: { usage: 12.5 },
+    ram: { used: 3 * 1024 ** 3, total: 8 * 1024 ** 3 },
+    swap: { used: 128 * 1024 ** 2, total: 2 * 1024 ** 3 },
+    load: { load1: 0.42, load5: 0.3, load15: 0.2 },
+    disk: { used: 20 * 1024 ** 3, total: 50 * 1024 ** 3 },
+    network: { up: 2048, down: 1024, totalUp: 111, totalDown: 222 },
+    connections: { tcp: 24, udp: 2 },
+    uptime: 123456,
+    process: 88,
+    updated_at: '2026-08-21T12:00:00.000Z',
+  }]
+  const loadRecords = {
+    count: 1,
+    records: [{
+      client: node.uuid,
+      time: '2026-08-21T11:55:00.000Z',
+      cpu: 12.5,
+      gpu: 0,
+      ram: 3 * 1024 ** 3,
+      ram_total: 0,
+      swap: 128 * 1024 ** 2,
+      swap_total: 0,
+      load: 0.42,
+      temp: 36.5,
+      disk: 20 * 1024 ** 3,
+      disk_total: 0,
+      net_in: 1024,
+      net_out: 2048,
+      net_total_up: 111,
+      net_total_down: 222,
+      traffic_up: 2048,
+      traffic_down: 1024,
+      process: 88,
+      connections: 24,
+      connections_udp: 2,
+    }],
+    has_gpu_data: false,
+    gpu_devices: [],
+  }
+  const pingRecords = {
+    count: 2,
+    records: [
+      { task_id: 0, time: '2026-08-21T11:55:00.000Z', value: 18, client: node.uuid },
+      { task_id: 0, time: '2026-08-21T12:00:00.000Z', value: -1, client: node.uuid },
+    ],
+    tasks: [{
+      id: 0,
+      name: 'Google',
+      type: 'icmp',
+      interval: 30,
+      default_on: true,
+      total: 2,
+      loss: 50,
+      min: 18,
+      max: 18,
+      avg: 18,
+    }],
+    basic_info: { clients: [node.uuid] },
+  }
+  const settings = {
+    sitename: '妙妙屋 X 主控',
+    description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+    theme: 'AdhesiveNote',
+    theme_settings: { layout: 'paper' },
+    private_site: false,
+    record_enabled: true,
+    record_preserve_time: 24,
+    ping_record_preserve_time: 24,
+    custom_head: '',
+    custom_body: '',
+    oauth_enable: false,
+    oauth_provider: '',
+    disable_password_login: false,
+    cors_origin_check_enabled: true,
+    visitor_audit_enabled: false,
+  }
+
+  await withApi(fakeService({
+    getNodesInformation: async () => [node],
+    getPublicSettings: async () => settings,
+    getNodesLatestStatus: async () => ({ [node.uuid]: status }),
+    getClientRecentRecords: async () => recent,
+    getLoadRecords: async () => loadRecords,
+    getPingRecords: async () => pingRecords,
+    getVersion: async () => ({ version: 'v0.2.0', hash: 'deadbee' }),
+  }), async (baseUrl) => {
+    const nodes = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'public:getNodesInformation' }),
+    })
+    assert.equal(nodes.status, 200)
+    assert.deepEqual(nodes.body, { jsonrpc: '2.0', id: 10, result: [node] })
+
+    const statusResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'common:getNodesLatestStatus' }),
+    })
+    assert.equal(statusResp.status, 200)
+    assert.deepEqual(statusResp.body, { jsonrpc: '2.0', id: 11, result: { [node.uuid]: status } })
+
+    const recentResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'public:getClientRecentRecords' }),
+    })
+    assert.equal(recentResp.status, 200)
+    assert.deepEqual(recentResp.body, { jsonrpc: '2.0', id: 12, result: recent })
+
+    const settingsResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'public:getPublicSettings' }),
+    })
+    assert.equal(settingsResp.status, 200)
+    assert.deepEqual(settingsResp.body, { jsonrpc: '2.0', id: 13, result: settings })
+
+    const versionResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 14, method: 'public:getVersion' }),
+    })
+    assert.equal(versionResp.status, 200)
+    assert.deepEqual(versionResp.body, { jsonrpc: '2.0', id: 14, result: { version: 'v0.2.0', hash: 'deadbee' } })
+
+    const loadResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 15, method: 'public:getRecordsByUUID', params: { uuid: node.uuid, load_type: 'all', hours: '24' } }),
+    })
+    assert.equal(loadResp.status, 200)
+    assert.deepEqual(loadResp.body, { jsonrpc: '2.0', id: 15, result: loadRecords })
+
+    const pingResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 16, method: 'public:getPingRecords', params: { uuid: node.uuid, hours: '24' } }),
+    })
+    assert.equal(pingResp.status, 200)
+    assert.deepEqual(pingResp.body, { jsonrpc: '2.0', id: 16, result: pingRecords })
   })
 })

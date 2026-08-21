@@ -7,6 +7,15 @@ export interface ProbeServer {
   id?: string | number
   name?: string | null
   host?: string | null
+  cpu_name?: string | null
+  virtualization?: string | null
+  arch?: string | null
+  cpu_cores?: number | string | null
+  cpu_physical_cores?: number | string | null
+  os?: string | null
+  kernel_version?: string | null
+  gpu_name?: string | null
+  gpu?: number | string | null
   region?: string | null
   region_country?: string | null
   region_name?: string | null
@@ -20,10 +29,13 @@ export interface ProbeServer {
   memory?: number | string | null
   mem_used?: number | string | null
   mem_total?: number | string | null
+  swap?: number | string | null
+  swap_total?: number | string | null
   disk_used?: number | string | null
   disk_total?: number | string | null
   load?: number | string | readonly (number | string | null)[] | null
   loadavg?: string | null
+  temp?: number | string | null
   upload?: number | string | null
   upload_speed?: number | string | null
   download?: number | string | null
@@ -32,6 +44,8 @@ export interface ProbeServer {
   downlink?: number | string | null
   totalUpload?: number | string | null
   totalDownload?: number | string | null
+  net_total_up?: number | string | null
+  net_total_down?: number | string | null
   trafficPeriod?: string | null
   daily_traffic?: ProbeDailyTraffic[] | null
   traffic_used_up?: number | string | null
@@ -40,6 +54,24 @@ export interface ProbeServer {
   traffic_used?: number | string | null
   period_start?: string | number | null
   period_end?: string | number | null
+  process?: number | string | null
+  connections?: number | string | null
+  connections_udp?: number | string | null
+  uptime?: number | string | null
+  weight?: number | string | null
+  price?: number | string | null
+  billing_cycle?: number | string | null
+  auto_renewal?: boolean | null
+  currency?: string | null
+  expired_at?: string | number | null
+  group?: string | null
+  tags?: string | null
+  hidden?: boolean | null
+  traffic_limit?: number | string | null
+  traffic_limit_type?: string | null
+  created_at?: string | number | null
+  updated_at?: string | number | null
+  public_remark?: string | null
   ping?: ProbeBucket[] | null
   routes?: ProbeReturnRoute[] | null
 }

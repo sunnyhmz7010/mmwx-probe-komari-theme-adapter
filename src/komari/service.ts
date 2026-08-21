@@ -1,6 +1,30 @@
+import { readFileSync } from 'node:fs'
+
 import type { MmwxSystemMetricSeries, ProbePayload, ProbeSeriesPayload, SeriesQuery } from '../mmwx/types.js'
-import { toKomariNode, toKomariRecord, toLoadHistory, toPingSeriesHistory, toSystemMetricHistory } from './mapper.js'
-import type { KomariSnapshot, LoadHistory, PingHistory } from './types.js'
+import {
+  toKomariLoadRecords,
+  toKomariNode,
+  toKomariNodeStatusMap,
+  toKomariPublicNodes,
+  toKomariRecentReports,
+  toKomariRecord,
+  toKomariPingRecords,
+  toLoadHistory,
+  toPingSeriesHistory,
+  toSystemMetricHistory,
+} from './mapper.js'
+import type {
+  KomariLoadRecords,
+  KomariNodeStatusMap,
+  KomariPingRecords,
+  KomariPublicNode,
+  KomariPublicSettings,
+  KomariRecentReport,
+  KomariSnapshot,
+  KomariVersionInfo,
+  LoadHistory,
+  PingHistory,
+} from './types.js'
 
 interface DataClient {
   fetchProbe(): Promise<ProbePayload>
@@ -15,6 +39,20 @@ interface CacheEntry<T> {
 interface SnapshotValue {
   snapshot: KomariSnapshot
   payload: ProbePayload
+}
+
+const PACKAGE_VERSION = readPackageVersion()
+const BUILD_HASH = process.env.GITHUB_SHA?.trim() || process.env.GIT_COMMIT?.trim() || 'unknown'
+
+function readPackageVersion(): string {
+  try {
+    const raw = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')
+    const parsed = JSON.parse(raw) as { version?: string }
+    const version = parsed.version?.trim()
+    return version || '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
 }
 
 export class KomariServiceError extends Error {
@@ -45,6 +83,45 @@ export class KomariDataService {
     return (await this.getSnapshotValue()).payload
   }
 
+  public async getNodesInformation(): Promise<KomariPublicNode[]> {
+    return toKomariPublicNodes(await this.getProbePayload())
+  }
+
+  public async getPublicSettings(): Promise<KomariPublicSettings> {
+    return {
+      sitename: '妙妙屋 X 主控',
+      description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+      theme: 'AdhesiveNote',
+      theme_settings: null,
+      private_site: false,
+      record_enabled: true,
+      record_preserve_time: 24,
+      ping_record_preserve_time: 24,
+      custom_head: '',
+      custom_body: '',
+      oauth_enable: false,
+      oauth_provider: '',
+      disable_password_login: false,
+      cors_origin_check_enabled: true,
+      visitor_audit_enabled: false,
+    }
+  }
+
+  public async getNodesLatestStatus(): Promise<KomariNodeStatusMap> {
+    return toKomariNodeStatusMap(await this.getProbePayload())
+  }
+
+  public async getClientRecentRecords(): Promise<KomariRecentReport[]> {
+    return toKomariRecentReports(await this.getProbePayload())
+  }
+
+  public async getVersion(): Promise<KomariVersionInfo> {
+    return {
+      version: `v${PACKAGE_VERSION}`,
+      hash: BUILD_HASH,
+    }
+  }
+
   public async getSeriesPayload(query: SeriesQuery): Promise<ProbeSeriesPayload> {
     return await this.getSeries(query)
   }
@@ -62,6 +139,14 @@ export class KomariDataService {
     if (isSystemMetricSeries(payload.series)) return toSystemMetricHistory(payload.series, index)
     const series = payload.systems?.find((item) => Number(item.serverId) === index) ?? payload.systems?.[0] ?? { serverId: index, points: [] }
     return toLoadHistory({ ...series, serverId: index })
+  }
+
+  public async getLoadRecords(uuid: string, query: SeriesQuery): Promise<KomariLoadRecords> {
+    return toKomariLoadRecords(await this.getLoadHistory(uuid, query))
+  }
+
+  public async getPingRecords(query: SeriesQuery): Promise<KomariPingRecords> {
+    return toKomariPingRecords(await this.getPingHistory(query))
   }
 
   private async getSnapshotValue(): Promise<SnapshotValue> {

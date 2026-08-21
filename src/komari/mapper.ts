@@ -1,5 +1,23 @@
-import type { MmwxMetricPoint, MmwxProbeSeries, MmwxSystemMetricSeries, MmwxSystemSeries, MmwxSystemSeriesPoint, ProbeBucket, ProbePingSeries, ProbeSeriesPayload, ProbeServer } from '../mmwx/types.js'
-import type { KomariLoad, KomariNetwork, KomariNode, KomariRecord, LoadHistory, LoadHistoryRecord, PingHistory, PingTask } from './types.js'
+import type { MmwxMetricPoint, MmwxProbeSeries, MmwxSystemMetricSeries, MmwxSystemSeries, MmwxSystemSeriesPoint, ProbeBucket, ProbePingSeries, ProbePayload, ProbeSeriesPayload, ProbeServer } from '../mmwx/types.js'
+import type {
+  KomariLoad,
+  KomariLoadRecord,
+  KomariLoadRecords,
+  KomariNetwork,
+  KomariNode,
+  KomariNodeStatus,
+  KomariNodeStatusMap,
+  KomariPublicNode,
+  KomariRecentReport,
+  KomariRecord,
+  KomariPingRecord,
+  KomariPingRecordTask,
+  KomariPingRecords,
+  LoadHistory,
+  LoadHistoryRecord,
+  PingHistory,
+  PingTask,
+} from './types.js'
 
 function numberOrUndefined(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined
@@ -277,6 +295,223 @@ export function toSystemMetricHistory(series: MmwxSystemMetricSeries, serverInde
     .sort(([left], [right]) => left - right)
     .map(([, record]) => record)
   return { count: records.length, records }
+}
+
+const NEVER_EXPIRES = '0001-01-01T00:00:00.000Z'
+
+function stringOrDefault(value: unknown, fallback: string): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  return fallback
+}
+
+function boolOrDefault(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function dateTimeOrDefault(value: unknown, fallback: Date): string {
+  if (value === null || value === undefined || value === '') return fallback.toISOString()
+  if (typeof value === 'number') {
+    const timestamp = value > 1e12 ? value : value * 1000
+    return new Date(timestamp).toISOString()
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return fallback.toISOString()
+    const numeric = Number(trimmed)
+    if (Number.isFinite(numeric)) {
+      const timestamp = numeric > 1e12 ? numeric : numeric * 1000
+      return new Date(timestamp).toISOString()
+    }
+    const parsed = Date.parse(trimmed)
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString()
+  }
+  return fallback.toISOString()
+}
+
+function regionLabel(server: ProbeServer): string {
+  return server.region?.trim()
+    || server.country?.trim()
+    || server.region_country?.trim()
+    || server.region_name?.trim()
+    || server.region_city?.trim()
+    || ''
+}
+
+function publicRemark(server: ProbeServer): string | undefined {
+  return server.public_remark?.trim()
+    || server.provider_name?.trim()
+    || server.host?.trim()
+    || undefined
+}
+
+export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): KomariPublicNode[] {
+  return payload.servers.map((server, index) => ({
+    uuid: `mmwx-${index}`,
+    name: nodeName(server, index),
+    cpu_name: stringOrDefault(server.cpu_name, 'Unknown CPU'),
+    virtualization: stringOrDefault(server.virtualization, 'unknown'),
+    arch: stringOrDefault(server.arch, 'amd64'),
+    cpu_cores: numberOrUndefined(server.cpu_cores) ?? 1,
+    cpu_physical_cores: numberOrUndefined(server.cpu_physical_cores) ?? 1,
+    os: stringOrDefault(server.os, 'Linux'),
+    kernel_version: stringOrDefault(server.kernel_version, 'unknown'),
+    gpu_name: stringOrDefault(server.gpu_name, 'None'),
+    region: regionLabel(server),
+    mem_total: numberOrUndefined(server.mem_total) ?? 0,
+    swap_total: numberOrUndefined(server.swap_total) ?? 0,
+    disk_total: numberOrUndefined(server.disk_total) ?? 0,
+    weight: numberOrUndefined(server.weight) ?? 0,
+    price: numberOrUndefined(server.price) ?? 0,
+    billing_cycle: numberOrUndefined(server.billing_cycle) ?? 30,
+    auto_renewal: boolOrDefault(server.auto_renewal, false),
+    currency: stringOrDefault(server.currency, '$'),
+    expired_at: server.expired_at === null || server.expired_at === undefined || server.expired_at === ''
+      ? NEVER_EXPIRES
+      : dateTimeOrDefault(server.expired_at, new Date(0)),
+    group: stringOrDefault(server.group, ''),
+    tags: stringOrDefault(server.tags, ''),
+    hidden: boolOrDefault(server.hidden, false),
+    traffic_limit: numberOrUndefined(server.traffic_limit) ?? 0,
+    traffic_limit_type: stringOrDefault(server.traffic_limit_type, 'max'),
+    created_at: dateTimeOrDefault(server.created_at, now),
+    updated_at: dateTimeOrDefault(server.updated_at, now),
+    public_remark: publicRemark(server),
+  }))
+}
+
+export function toKomariNodeStatusMap(payload: ProbePayload, now = new Date()): KomariNodeStatusMap {
+  return Object.fromEntries(payload.servers.map((server, index) => [ `mmwx-${index}`, toKomariNodeStatus(server, index, now) ]))
+}
+
+export function toKomariNodeStatus(server: ProbeServer, index: number, now = new Date()): KomariNodeStatus {
+  const load = loadAverage(server.load ?? server.loadavg)
+  const status: KomariNodeStatus = {
+    client: `mmwx-${index}`,
+    time: dateTimeOrDefault(server.updated_at, now),
+    cpu: firstFinite([server.cpu, server.cpu_pct]) ?? 0,
+    gpu: numberOrUndefined(server.gpu) ?? 0,
+    ram: firstFinite([server.memory, server.mem_used]) ?? 0,
+    ram_total: numberOrUndefined(server.mem_total) ?? 0,
+    swap: numberOrUndefined(server.swap) ?? 0,
+    swap_total: numberOrUndefined(server.swap_total) ?? 0,
+    load: load?.load1 ?? 0,
+    load5: load?.load5 ?? 0,
+    load15: load?.load15 ?? 0,
+    temp: numberOrUndefined(server.temp) ?? 0,
+    disk: numberOrUndefined(server.disk_used) ?? 0,
+    disk_total: numberOrUndefined(server.disk_total) ?? 0,
+    net_in: firstFinite([server.download, server.download_speed]) ?? 0,
+    net_out: firstFinite([server.upload, server.upload_speed]) ?? 0,
+    net_total_up: firstFinite([server.net_total_up, server.totalUpload, server.traffic_used_up]) ?? 0,
+    net_total_down: firstFinite([server.net_total_down, server.totalDownload, server.traffic_used_down]) ?? 0,
+    net_total_out: firstFinite([server.net_total_up, server.totalUpload, server.traffic_used_up]) ?? 0,
+    net_total_down_alt: firstFinite([server.net_total_down, server.totalDownload, server.traffic_used_down]) ?? 0,
+    process: numberOrUndefined(server.process) ?? 0,
+    connections: numberOrUndefined(server.connections) ?? 0,
+    connections_udp: numberOrUndefined(server.connections_udp) ?? 0,
+    online: server.online !== false,
+    uptime: numberOrUndefined(server.uptime) ?? 0,
+  }
+  return status
+}
+
+export function toKomariRecentReports(payload: ProbePayload, now = new Date()): KomariRecentReport[] {
+  return payload.servers.map((server, index) => {
+    const status = toKomariNodeStatus(server, index, now)
+    return {
+      uuid: status.client,
+      cpu: { usage: status.cpu },
+      ram: { used: status.ram, total: status.ram_total },
+      swap: { used: status.swap, total: status.swap_total },
+      load: { load1: status.load, load5: status.load5, load15: status.load15 },
+      disk: { used: status.disk, total: status.disk_total },
+      network: {
+        up: status.net_out,
+        down: status.net_in,
+        totalUp: status.net_total_up,
+        totalDown: status.net_total_down,
+      },
+      connections: { tcp: status.connections, udp: status.connections_udp },
+      uptime: status.uptime,
+      process: status.process,
+      updated_at: status.time,
+    }
+  })
+}
+
+function enrichLoadRecord(record: LoadHistoryRecord): KomariLoadRecord {
+  return {
+    client: record.client,
+    time: record.time,
+    cpu: record.cpu ?? 0,
+    gpu: 0,
+    ram: record.ram ?? 0,
+    ram_total: 0,
+    swap: 0,
+    swap_total: 0,
+    load: record.load ?? 0,
+    temp: 0,
+    disk: 0,
+    disk_total: 0,
+    net_in: record.net_in ?? 0,
+    net_out: record.net_out ?? 0,
+    net_total_up: 0,
+    net_total_down: 0,
+    process: 0,
+    connections: 0,
+    connections_udp: 0,
+  }
+}
+
+export function toKomariLoadRecords(history: LoadHistory): KomariLoadRecords {
+  return {
+    count: history.count,
+    records: history.records.map(enrichLoadRecord),
+    has_gpu_data: false,
+    gpu_devices: [],
+  }
+}
+
+function summarisePingTask(task: PingTask, records: PingHistory['records']): KomariPingRecordTask {
+  const taskRecords = records.filter((record) => record.task_id === task.id)
+  const values = taskRecords
+    .map((record) => record.value)
+    .filter((value): value is number => typeof value === 'number' && value >= 0)
+  const total = taskRecords.length
+  const failed = taskRecords.filter((record) => typeof record.value !== 'number' || record.value < 0).length
+  const min = values.length > 0 ? Math.min(...values) : 0
+  const max = values.length > 0 ? Math.max(...values) : 0
+  const avg = values.length > 0 ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0
+  return {
+    id: task.id,
+    name: task.name,
+    type: task.type,
+    interval: task.interval,
+    default_on: task.default_on,
+    total,
+    loss: total > 0 ? Math.round((failed / total) * 100) : 0,
+    min,
+    max,
+    avg,
+  }
+}
+
+export function toKomariPingRecords(history: PingHistory): KomariPingRecords {
+  const records: KomariPingRecord[] = history.records.map((record) => ({
+    task_id: record.task_id,
+    time: record.time,
+    value: typeof record.value === 'number' ? record.value : -1,
+    client: record.client,
+  }))
+  return {
+    count: history.count,
+    records,
+    tasks: history.tasks.map((task) => summarisePingTask(task, records)),
+    basic_info: history.basic_info,
+  }
 }
 
 function metricTimestamp(point: MmwxMetricPoint): number | undefined {
