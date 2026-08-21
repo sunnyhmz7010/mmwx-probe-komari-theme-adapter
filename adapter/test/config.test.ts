@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { loadConfig } from '../src/config.js'
+import { logError, logInfo } from '../src/log.js'
 
 function isConfigError(error: unknown): error is { message: string; name: string } {
   return error instanceof Error && error.name === 'ConfigError'
@@ -110,4 +111,28 @@ test('never includes the token in configuration errors', () => {
     () => loadConfig({ ...validEnv, PROBE_TOKEN: token, PORT: 'invalid' }),
     (error: unknown) => isConfigError(error) && !error.message.includes(token),
   )
+})
+
+test('redacts explicit secrets from log messages and context', () => {
+  const secret = 'explicit-test-secret'
+  const outputs: string[] = []
+  const originalInfo = console.info
+  const originalError = console.error
+
+  console.info = (...args: unknown[]) => outputs.push(args.join(' '))
+  console.error = (...args: unknown[]) => outputs.push(args.join(' '))
+
+  try {
+    logInfo(`message ${secret}`, { detail: `context ${secret}` }, [secret])
+    logError(`message ${secret}`, { detail: `context ${secret}` }, [secret])
+  } finally {
+    console.info = originalInfo
+    console.error = originalError
+  }
+
+  assert.equal(outputs.length, 2)
+  for (const output of outputs) {
+    assert.equal(output.includes(secret), false)
+    assert.equal(output.match(/\[REDACTED\]/g)?.length, 2)
+  }
 })
