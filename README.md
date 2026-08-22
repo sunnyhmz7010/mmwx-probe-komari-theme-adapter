@@ -24,8 +24,6 @@
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
 - 只读安全边界：`PROBE_TOKEN` 仅用于容器访问已配置主控，不暴露给浏览器，不提供登录、管理、写入或节点修改能力
-- 轻量容器化：提供 GHCR 多架构镜像和 Docker Compose 示例，运行阶段使用非 root 用户
-- 正式版本发布：仅推送 `v*` Git tag 时构建并发布镜像，`latest` 始终指向最近一次正式 Release
 
 ## ⚡ 快速开始
 
@@ -106,33 +104,6 @@ docker run -d \
 ```
 
 如果使用 Docker Compose 本地构建，把 `compose.yaml` 中的 `image: ghcr.io/...` 换成 `build: .`，然后执行 `docker compose up -d --build`。
-
-### 📌 镜像版本与发布
-
-Docker workflow 仅在推送 `v*` Git tag 时构建并发布镜像，不会因 `main` 分支提交自动构建镜像。发布 `v1.0.0` 后会生成：
-
-```text
-ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1.0.0
-ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1.0
-ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1
-ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
-```
-
-`latest` 始终指向最近一次正式 Release。
-
-发布示例：
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-生产环境建议使用明确版本号；使用 `latest` 时，更新容器前需要主动拉取镜像：
-
-```bash
-docker compose pull
-docker compose up -d --force-recreate
-```
 
 ## 📖 使用说明
 
