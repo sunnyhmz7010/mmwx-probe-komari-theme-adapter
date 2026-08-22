@@ -14,6 +14,7 @@ export async function start(): Promise<ServerHandle> {
   const mmwx = new MmwxClient(config)
   const service = new KomariDataService(mmwx, config.cacheTtlMs, {
     ...theme.source,
+    themeTitle: theme.title,
     themeShort: theme.short,
     themeSettings: theme.themeSettings,
   })

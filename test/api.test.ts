@@ -138,30 +138,22 @@ test('API routes return Komari-compatible public resources', async () => {
 test('API routes expose MMWX probe-compatible fixed HTTP paths', async () => {
   const seen: unknown[] = []
   await withApi(fakeService({
+    getRawProbePayload: async () => {
+      seen.push(['raw-probe'])
+      return {
+        enabled: false,
+        upstream_raw_marker: true,
+        servers: [{
+          name: 'raw-node',
+        }],
+      } as ProbePayload
+    },
     getProbePayload: async () => {
-      seen.push(['probe'])
+      seen.push(['translated-probe'])
       return {
         enabled: true,
-        show_globe: true,
-        show_daily_trend: true,
-        show_traffic_hotspots: true,
-        show_traffic_7d: true,
-        show_resource_heatmap: true,
-        show_traffic_quota: true,
-        show_renewal_timeline: true,
-        show_health_score: true,
-        title: '妙妙屋 X 主控',
-        appearance: { theme: 'junimo', color_mode: 'light', revision: 'main' },
-        servers: [{
-          name: 'node-0',
-          online: true,
-          daily_traffic: [{ date: '2026-08-21', uplink: 1, downlink: 2, total: 3 }],
-          traffic_used_up: 1,
-          traffic_used_down: 2,
-          traffic_used_total: 3,
-          period_start: '2026-08-01T00:00:00.000Z',
-          period_end: '2026-09-01T00:00:00.000Z',
-        }],
+        title: 'translated',
+        servers: [{ name: 'translated-node', online: true }],
       } as ProbePayload
     },
     getSeriesPayload: async (query: SeriesQuery) => {
@@ -173,26 +165,10 @@ test('API routes expose MMWX probe-compatible fixed HTTP paths', async () => {
     assert.equal(probe.status, 200)
     assertJsonHeaders(probe)
     assert.deepEqual(probe.body, {
-      enabled: true,
-      show_globe: true,
-      show_daily_trend: true,
-      show_traffic_hotspots: true,
-      show_traffic_7d: true,
-      show_resource_heatmap: true,
-      show_traffic_quota: true,
-      show_renewal_timeline: true,
-      show_health_score: true,
-      title: '妙妙屋 X 主控',
-      appearance: { theme: 'junimo', color_mode: 'light', revision: 'main' },
+      enabled: false,
+      upstream_raw_marker: true,
       servers: [{
-        name: 'node-0',
-        online: true,
-        daily_traffic: [{ date: '2026-08-21', uplink: 1, downlink: 2, total: 3 }],
-        traffic_used_up: 1,
-        traffic_used_down: 2,
-        traffic_used_total: 3,
-        period_start: '2026-08-01T00:00:00.000Z',
-        period_end: '2026-09-01T00:00:00.000Z',
+        name: 'raw-node',
       }],
     })
 
@@ -200,10 +176,43 @@ test('API routes expose MMWX probe-compatible fixed HTTP paths', async () => {
     assert.equal(series.status, 200)
     assert.deepEqual(series.body, { pings: [], systems: [] })
     assert.deepEqual(seen, [
-      ['probe'],
+      ['raw-probe'],
       ['series', { hours: '24', metric: 'system' }],
     ])
   })
+})
+
+test('MMWX probe-compatible HTTP paths bypass the Komari cache layer', async () => {
+  let probeCalls = 0
+  let seriesCalls = 0
+  const service = new KomariDataService({
+    fetchProbe: async () => {
+      probeCalls += 1
+      return {
+        enabled: true,
+        marker: `probe-${probeCalls}`,
+        servers: [],
+      } as ProbePayload
+    },
+    fetchSeries: async (query: SeriesQuery) => {
+      seriesCalls += 1
+      return {
+        marker: `series-${seriesCalls}`,
+        query,
+      } as ProbeSeriesPayload
+    },
+  }, 60_000)
+
+  await withApi(service, async (baseUrl) => {
+    assert.deepEqual((await request(baseUrl, '/api/probe')).body, { enabled: true, marker: 'probe-1', servers: [] })
+    assert.deepEqual((await request(baseUrl, '/api/probe')).body, { enabled: true, marker: 'probe-2', servers: [] })
+
+    assert.deepEqual((await request(baseUrl, '/api/series?range=24h')).body, { marker: 'series-1', query: { range: '24h' } })
+    assert.deepEqual((await request(baseUrl, '/api/series?range=24h')).body, { marker: 'series-2', query: { range: '24h' } })
+  })
+
+  assert.equal(probeCalls, 2)
+  assert.equal(seriesCalls, 2)
 })
 
 test('API routes return ping and load history with validated UUIDs', async () => {

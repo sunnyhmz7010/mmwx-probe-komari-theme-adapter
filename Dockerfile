@@ -14,9 +14,14 @@ RUN npm run build
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates \
+  && apt-get install -y --no-install-recommends git ca-certificates curl unzip \
   && rm -rf /var/lib/apt/lists/* \
+  && export BUN_INSTALL=/usr/local/bun \
+  && curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14" \
   && useradd --create-home --uid 10001 adapter
+
+ENV BUN_INSTALL=/usr/local/bun
+ENV PATH=/usr/local/bun/bin:$PATH
 
 WORKDIR /app
 COPY --from=build /app/package.json /app/package-lock.json ./

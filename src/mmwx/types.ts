@@ -40,6 +40,7 @@ export interface ProbePayload {
   show_health_score?: boolean
   title?: string | null
   logo?: string | null
+  icon?: string | null
   appearance?: ProbeAppearance | null
   license_badge?: ProbeLicenseBadge | null
   servers: ProbeServer[]

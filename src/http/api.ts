@@ -36,7 +36,7 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
 
         if (request.method !== 'GET') return methodNotAllowed(response)
         if (url.pathname === '/api/probe') {
-          return json(response, 200, await service.getProbePayload())
+          return json(response, 200, await service.getRawProbePayload())
         }
         if (url.pathname === '/api/series') {
           return json(response, 200, await service.getSeriesPayload(queryFrom(url)))

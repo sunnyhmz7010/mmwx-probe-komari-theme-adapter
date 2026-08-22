@@ -41,6 +41,7 @@ interface DataClient {
 interface ThemeSource {
   repoUrl: string
   ref: string
+  themeTitle?: string
   themeShort?: string
   themeSettings?: Record<string, unknown> | null
 }
@@ -133,6 +134,12 @@ function themeNameFromSource(source?: ThemeSource): string {
   if (!repoName) return 'pixel'
   const normalized = repoName.replace(/^komari-theme-/i, '').replace(/_/g, '-').trim()
   return normalized || 'pixel'
+}
+
+function themeTitleFromSource(source?: ThemeSource): string {
+  const title = stringOrUndefined(source?.themeTitle)
+  if (title) return title
+  return themeNameFromSource(source)
 }
 
 function normalizeProbeAppearance(input: ProbeAppearance | null | undefined, source?: ThemeSource): NonNullable<ProbePayload['appearance']> {
@@ -339,6 +346,7 @@ function normalizeProbeServer(server: ProbeServer, index: number): ProbeServer {
 function toProbePayload(payload: ProbePayload, source?: ThemeSource): ProbePayload {
   const servers = payload.servers.map((server, index) => normalizeProbeServer(server, index))
   const appearance = normalizeProbeAppearance(payload.appearance, source)
+  const logo = stringOrUndefined(payload.logo ?? payload.icon)
   return {
     enabled: payload.enabled !== false,
     show_globe: payload.show_globe ?? true,
@@ -349,8 +357,9 @@ function toProbePayload(payload: ProbePayload, source?: ThemeSource): ProbePaylo
     show_traffic_quota: payload.show_traffic_quota ?? true,
     show_renewal_timeline: payload.show_renewal_timeline ?? true,
     show_health_score: payload.show_health_score ?? true,
-    title: stringOrUndefined(payload.title) || '妙妙屋 X 主控',
-    ...(stringOrUndefined(payload.logo) ? { logo: stringOrUndefined(payload.logo) } : {}),
+    title: stringOrUndefined(payload.title) || themeTitleFromSource(source),
+    ...(logo ? { logo } : {}),
+    ...(logo ? { icon: logo } : {}),
     appearance,
     ...(normalizeProbeLicenseBadge(payload.license_badge) ? { license_badge: normalizeProbeLicenseBadge(payload.license_badge) } : {}),
     servers,
@@ -413,6 +422,10 @@ export class KomariDataService {
     return (await this.getSnapshotValue()).snapshot
   }
 
+  public async getRawProbePayload(): Promise<ProbePayload> {
+    return await this.client.fetchProbe()
+  }
+
   public async getProbePayload(): Promise<ProbePayload> {
     return toProbePayload((await this.getSnapshotValue()).payload, this.themeSource)
   }
@@ -429,9 +442,17 @@ export class KomariDataService {
   public async getPublicSettings(): Promise<KomariPublicSettings> {
     const probe = await this.getProbePayload()
     const themeSettings = this.themeSource?.themeSettings ?? {}
-    const logo = stringOrUndefined(probe.logo)
+    const logo = stringOrUndefined(probe.logo ?? probe.icon)
+    const sitename = stringOrUndefined(probe.title) || themeTitleFromSource(this.themeSource)
+    const customHeadParts: string[] = []
+    if (logo) {
+      customHeadParts.push(`<link rel="icon" href="${escapeHtmlAttribute(logo)}">`)
+    }
+    if (sitename) {
+      customHeadParts.push(`<script>document.title=${JSON.stringify(sitename).replaceAll('<', '\\u003c')};</script>`)
+    }
     return {
-      sitename: stringOrUndefined(probe.title) || '妙妙屋 X 主控',
+      sitename,
       description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
       theme: probe.appearance?.theme || themeNameFromSource(this.themeSource),
       theme_settings: themeSettings,
@@ -439,7 +460,7 @@ export class KomariDataService {
       record_enabled: true,
       record_preserve_time: 24,
       ping_record_preserve_time: 24,
-      custom_head: logo ? `<link rel="icon" href="${escapeHtmlAttribute(logo)}">` : '',
+      custom_head: customHeadParts.join(''),
       custom_body: '',
       oauth_enable: false,
       oauth_provider: '',
@@ -465,7 +486,7 @@ export class KomariDataService {
   }
 
   public async getSeriesPayload(query: SeriesQuery): Promise<ProbeSeriesPayload> {
-    return await this.getSeries(query)
+    return await this.client.fetchSeries(query)
   }
 
   public async getRecords(query: SeriesQuery): Promise<KomariCommonRecords> {

@@ -48,6 +48,18 @@ function defaultThemeSettingValue(item: ThemeConfigurationItem): unknown {
   return ''
 }
 
+async function readThemeDocumentTitle(indexPath: string): Promise<string | undefined> {
+  try {
+    const html = await readFile(indexPath, 'utf8')
+    const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+    if (!match) return undefined
+    const title = match[1].trim()
+    return title || undefined
+  } catch {
+    return undefined
+  }
+}
+
 function manifestThemeSettings(manifest: ThemeManifest | null): Record<string, unknown> | null {
   if (!manifest) return null
   const configuration = isRecord(manifest.configuration) ? manifest.configuration : undefined
@@ -111,6 +123,7 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
       outputCandidates: plan.outputCandidates.join(','),
     })
     await buildTheme(plan, repoDir, outputDir, logger)
+    const title = await readThemeDocumentTitle(path.join(outputDir, 'index.html'))
 
     const previousDir = `${currentDir}.previous-${Date.now()}`
     await rm(previousDir, { recursive: true, force: true })
@@ -125,6 +138,7 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
     return {
       directory: currentDir,
       indexPath: path.join(currentDir, 'index.html'),
+      title,
       short: metadata.short,
       themeSettings: metadata.themeSettings,
       source,

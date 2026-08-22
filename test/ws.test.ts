@@ -40,12 +40,13 @@ async function reservePort(): Promise<number> {
 
 async function tempTheme(): Promise<LoadedTheme> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'mmwx-theme-'))
-  await writeFile(path.join(dir, 'index.html'), '<!doctype html><html><body>theme</body></html>')
+  await writeFile(path.join(dir, 'index.html'), '<!doctype html><html><head><title>服务器状态</title></head><body>theme</body></html>')
   await mkdir(path.join(dir, 'assets'), { recursive: true })
   await writeFile(path.join(dir, 'assets', 'app.js'), 'console.log("theme")')
   return {
     directory: dir,
     indexPath: path.join(dir, 'index.html'),
+    title: '服务器状态',
     source: { repoUrl: 'https://github.com/acme/theme', ref: 'main' },
   }
 }
@@ -90,6 +91,9 @@ test('serves static assets and SPA fallback safely', async () => {
     assert.equal(fallback.status, 200)
     assert.match(fallback.contentType ?? '', /html/)
     assert.match(fallback.body, /theme/)
+    assert.match(fallback.body, /fetch\("\/api\/probe"/)
+    assert.match(fallback.body, /document\.title=title/)
+    assert.match(fallback.body, /link\.href=icon/)
   } finally {
     await serverHandle.close()
     await rm(theme.directory, { recursive: true, force: true })

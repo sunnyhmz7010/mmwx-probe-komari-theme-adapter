@@ -383,7 +383,7 @@ test('wraps raw probe payload into theme-ready envelope with normalized fields',
       }],
     } as ProbePayload),
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
-  }, 1000, { repoUrl: 'https://github.com/vaspike/junimo', ref: 'main' })
+  }, 1000, { repoUrl: 'https://github.com/vaspike/junimo', ref: 'main', themeTitle: '服务器状态' } as never)
 
   const payload = await service.getProbePayload()
   const server = payload.servers[0]
@@ -391,7 +391,7 @@ test('wraps raw probe payload into theme-ready envelope with normalized fields',
   assert.equal(payload.enabled, true)
   assert.equal(payload.show_globe, true)
   assert.equal(payload.show_health_score, true)
-  assert.equal(payload.title, '妙妙屋 X 主控')
+  assert.equal(payload.title, '服务器状态')
   assert.deepEqual(payload.appearance, { theme: 'junimo', color_mode: 'light', revision: 'main' })
   assert.equal(server.cpu_model, 'AMD EPYC 7B13')
   assert.equal(server.cpu_cores, 2)
@@ -415,6 +415,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
   const service = new KomariDataService({
     fetchProbe: async () => ({
       title: '星穹主控',
+      logo: 'https://example.com/logo.png',
       appearance: { color_mode: 'dark' },
       servers: [server()],
     } as ProbePayload),
@@ -436,7 +437,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
     record_enabled: true,
     record_preserve_time: 24,
     ping_record_preserve_time: 24,
-    custom_head: '',
+    custom_head: '<link rel="icon" href="https://example.com/logo.png"><script>document.title="星穹主控";</script>',
     custom_body: '',
     oauth_enable: false,
     oauth_provider: '',
@@ -444,4 +445,27 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
     cors_origin_check_enabled: true,
     visitor_audit_enabled: false,
   })
+})
+
+test('uses theme title fallback and accepts icon alias for browser metadata', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      icon: 'https://example.com/icon.svg',
+      servers: [server()],
+    } as ProbePayload),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
+  }, 1000, {
+    repoUrl: 'https://github.com/Tokinx/komari-theme-emerald',
+    ref: 'master',
+    themeTitle: '服务器状态',
+  } as never)
+
+  const probe = await service.getProbePayload()
+  const settings = await service.getPublicSettings()
+
+  assert.equal(probe.title, '服务器状态')
+  assert.equal(probe.logo, 'https://example.com/icon.svg')
+  assert.equal(probe.icon, 'https://example.com/icon.svg')
+  assert.equal(settings.sitename, '服务器状态')
+  assert.equal(settings.custom_head, '<link rel="icon" href="https://example.com/icon.svg"><script>document.title="服务器状态";</script>')
 })

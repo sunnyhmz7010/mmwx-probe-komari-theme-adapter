@@ -60,13 +60,18 @@ function buildEnvironment(): NodeJS.ProcessEnv {
   return env
 }
 
-function packageManagerFor(repoDir: string, packageJson: Record<string, unknown>): Exclude<PackageManager, 'none'> {
+function packageManagerFromField(packageJson: Record<string, unknown>): Exclude<PackageManager, 'none'> | undefined {
+  const raw = typeof packageJson.packageManager === 'string' ? packageJson.packageManager.trim() : ''
+  if (!raw) return undefined
+  const name = raw.split('@', 1)[0]
+  if (name === 'pnpm' || name === 'bun' || name === 'npm') return name
+  return undefined
+}
+
+function packageManagerFromLockfiles(repoDir: string): Exclude<PackageManager, 'none'> {
   if (existsSync(repoDir, 'pnpm-lock.yaml')) return 'pnpm'
   if (existsSync(repoDir, 'bun.lockb') || existsSync(repoDir, 'bun.lock')) return 'bun'
   if (existsSync(repoDir, 'package-lock.json')) return 'npm'
-  if (!packageJson.scripts || typeof packageJson.scripts !== 'object' || !('build' in packageJson.scripts)) {
-    throw new Error('Theme package.json must declare a build script')
-  }
   return 'npm'
 }
 
@@ -109,7 +114,8 @@ export async function detectBuildPlan(repoDir: string): Promise<BuildPlan> {
     }
     throw new Error('Theme package.json must declare a build script')
   }
-  const packageManager = packageManagerFor(resolvedRepo, packageJson)
+  const declaredPackageManager = packageManagerFromField(packageJson)
+  const packageManager = declaredPackageManager ?? packageManagerFromLockfiles(resolvedRepo)
   const commands = hasSupportedLockfile(resolvedRepo) ? commandFor(packageManager) : { installArgs: ['install'], buildArgs: ['run', 'build'] }
   return { packageManager, ...commands, outputCandidates: [...OUTPUT_CANDIDATES] }
 }

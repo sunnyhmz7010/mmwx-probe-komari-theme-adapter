@@ -15,6 +15,8 @@ const CONTENT_TYPES: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 }
 
+const HEAD_SYNC_SCRIPT = `<script>(()=>{const text=(v)=>typeof v==="string"?v.trim():"";fetch("/api/probe",{cache:"no-store"}).then((r)=>r.ok?r.json():null).then((d)=>{if(!d)return;const title=text(d.title);if(title)document.title=title;const icon=text(d.logo)||text(d.icon);if(icon){let link=document.querySelector('link[rel~="icon"]');if(!link){link=document.createElement("link");link.rel="icon";document.head.appendChild(link)}link.href=icon}}).catch(()=>{})})();</script>`
+
 interface Candidate {
   filePath: string
   contentType: string
@@ -68,7 +70,13 @@ export async function serveStatic(root: string, request: IncomingMessage, respon
   const selected = candidate ?? await indexCandidate(root)
   if (!selected) return false
 
-  const body = request.method === 'HEAD' ? undefined : await readFile(selected.filePath)
+  let body = request.method === 'HEAD' ? undefined : await readFile(selected.filePath)
+  if (body && selected.contentType.startsWith('text/html')) {
+    const html = body.toString('utf8')
+    body = Buffer.from(html.includes('</head>')
+      ? html.replace('</head>', `${HEAD_SYNC_SCRIPT}</head>`)
+      : `${html}${HEAD_SYNC_SCRIPT}`)
+  }
   response.writeHead(200, {
     'Content-Type': selected.contentType,
     'X-Content-Type-Options': 'nosniff',

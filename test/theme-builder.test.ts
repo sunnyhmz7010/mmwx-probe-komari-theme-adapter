@@ -48,6 +48,24 @@ test('builds a package theme when the repository root also contains source index
   }
 })
 
+test('prefers packageManager over lockfiles when the theme declares one', async () => {
+  const repoDir = await packageFixture({
+    'package.json': JSON.stringify({
+      packageManager: 'bun@1.3.14',
+      scripts: { build: 'build' },
+    }),
+    'package-lock.json': '{}',
+  })
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    assert.equal(plan.packageManager, 'bun')
+    assert.deepEqual(plan.outputCandidates, ['dist', 'build', 'out', 'public', '.'])
+  } finally {
+    await rm(repoDir, { recursive: true, force: true })
+  }
+})
+
 test('builds package themes without a lockfile using npm install', async () => {
   const repoDir = await packageFixture({
     'index.html': '<!doctype html>',
