@@ -16,6 +16,17 @@ interface TestResponse {
 function fakeService(overrides: Record<string, unknown> = {}): KomariDataService {
   return {
     getProbePayload: async () => ({
+      enabled: true,
+      show_globe: true,
+      show_daily_trend: true,
+      show_traffic_hotspots: true,
+      show_traffic_7d: true,
+      show_resource_heatmap: true,
+      show_traffic_quota: true,
+      show_renewal_timeline: true,
+      show_health_score: true,
+      title: '妙妙屋 X 主控',
+      appearance: { theme: 'junimo', color_mode: 'light', revision: 'main' },
       servers: [{
         name: 'node-0',
         online: true,
@@ -111,6 +122,17 @@ test('API routes expose MMWX probe-compatible fixed HTTP paths', async () => {
     getProbePayload: async () => {
       seen.push(['probe'])
       return {
+        enabled: true,
+        show_globe: true,
+        show_daily_trend: true,
+        show_traffic_hotspots: true,
+        show_traffic_7d: true,
+        show_resource_heatmap: true,
+        show_traffic_quota: true,
+        show_renewal_timeline: true,
+        show_health_score: true,
+        title: '妙妙屋 X 主控',
+        appearance: { theme: 'junimo', color_mode: 'light', revision: 'main' },
         servers: [{
           name: 'node-0',
           online: true,
@@ -132,6 +154,17 @@ test('API routes expose MMWX probe-compatible fixed HTTP paths', async () => {
     assert.equal(probe.status, 200)
     assertJsonHeaders(probe)
     assert.deepEqual(probe.body, {
+      enabled: true,
+      show_globe: true,
+      show_daily_trend: true,
+      show_traffic_hotspots: true,
+      show_traffic_7d: true,
+      show_resource_heatmap: true,
+      show_traffic_quota: true,
+      show_renewal_timeline: true,
+      show_health_score: true,
+      title: '妙妙屋 X 主控',
+      appearance: { theme: 'junimo', color_mode: 'light', revision: 'main' },
       servers: [{
         name: 'node-0',
         online: true,

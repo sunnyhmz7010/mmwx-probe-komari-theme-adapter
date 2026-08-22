@@ -12,7 +12,7 @@ export async function start(): Promise<ServerHandle> {
   logger.info(`启动配置：${describeConfig(config)}`)
   const theme = await loadTheme(config, logger)
   const mmwx = new MmwxClient(config)
-  const service = new KomariDataService(mmwx, config.cacheTtlMs)
+  const service = new KomariDataService(mmwx, config.cacheTtlMs, theme.source)
   const api = createApiRouter(service)
   const server = createHttpServer(config, theme, api, mmwx)
   await server.listen()

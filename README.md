@@ -19,12 +19,11 @@
 ## 🚀 核心能力
 
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
-- 独立密钥保护：`PROBE_TOKEN` 只保存在容器环境变量中，浏览器无法读取访问密钥
-- Komari 主题复用：启动时拉取并构建指定 Komari 主题，将 MMWX 探针数据映射为主题常用的只读接口
-- 历史指标支持：`/api/series` 返回 24 小时延迟、丢包率历史，追加 `metric=system` 获取 CPU、内存、网速和累计流量序列
-- 主题接口兼容：补齐 `common:getNodes`、`common:getRecords`、`public:queryMetrics`、`public:getPingMetricStats`、`public:getPublicPingTasks` 等主题常用 RPC
-- 流量字段保留：`/api/probe` 保留 `daily_traffic`、`traffic_used_up`、`traffic_used_down`、`traffic_used_total`、`period_start`、`period_end` 等主控字段
-- WebSocket 实时更新：`/api/stream` 代理主控实时探针流，供前端主题获取实时状态
+- Komari 公开只读兼容层：基于标准探针数据转换出常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
+- 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
+- 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
+- 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
+- 只读安全边界：`PROBE_TOKEN` 仅用于容器访问已配置主控，不暴露给浏览器，不提供登录、管理、写入或节点修改能力
 - 轻量容器化：提供 GHCR 多架构镜像和 Docker Compose 示例，运行阶段使用非 root 用户
 - 正式版本发布：仅推送 `v*` Git tag 时构建并发布镜像，`latest` 始终指向最近一次正式 Release
 
@@ -38,8 +37,6 @@
 - 一台能访问妙妙屋 X 主控和 GitHub 的 VPS、NAS 或本地 Docker 环境
 - Docker 与 Docker Compose
 - 一个可公开拉取的 Komari 主题 GitHub 仓库
-
-密钥明文只显示一次，请立即保存，切勿提交到 Git。生产环境建议在主控确认容器访问正常后，再开启“仅允许独立探针访问”。
 
 ### 📦 Docker Compose（推荐）
 
@@ -112,7 +109,7 @@ docker run -d \
 
 ### 📌 镜像版本与发布
 
-Docker workflow 仅响应 `v*` tag，不会因 `main` 分支提交自动构建镜像。发布 `v1.0.0` 后会生成：
+Docker workflow 仅在推送 `v*` Git tag 时构建并发布镜像，不会因 `main` 分支提交自动构建镜像。发布 `v1.0.0` 后会生成：
 
 ```text
 ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1.0.0
@@ -120,6 +117,8 @@ ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1.0
 ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:1
 ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
 ```
+
+`latest` 始终指向最近一次正式 Release。
 
 发布示例：
 
@@ -157,6 +156,14 @@ docker compose up -d --force-recreate
 - `traffic_used_up`、`traffic_used_down`、`traffic_used_total`：当前周期上行、下行和总用量
 - `period_start`、`period_end`：计费周期边界，`period_start` 含，`period_end` 不含
 - `traffic_used`：兼容字段，表示按主控服务器统计模式计算的计费用量
+
+`/api/probe` 还会补齐主题所需的外层字段：
+
+- `enabled`：页面启用开关
+- `title`、`logo`、`appearance`、`license_badge`：主题标题、图标、外观和徽标
+- `show_globe`、`show_daily_trend`、`show_traffic_hotspots`、`show_traffic_7d`、`show_resource_heatmap`、`show_traffic_quota`、`show_renewal_timeline`、`show_health_score`：主题模块开关
+
+节点字段会统一归一化为主题可直接消费的格式，并保留流量、续费和回程等附加信息。
 
 ### 🧩 Komari 兼容接口
 

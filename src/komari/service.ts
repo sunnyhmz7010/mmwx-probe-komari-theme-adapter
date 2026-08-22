@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import type { MmwxMetricPoint, MmwxProbeSeries, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbePayload, ProbePingSeries, ProbeSeriesPayload, SeriesQuery } from '../mmwx/types.js'
+import type { MmwxMetricPoint, MmwxProbeSeries, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbeLicenseBadge, ProbePayload, ProbePingSeries, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
 import {
   toKomariLoadRecords,
   toKomariNode,
@@ -38,6 +38,11 @@ interface DataClient {
   fetchSeries(query: SeriesQuery): Promise<ProbeSeriesPayload>
 }
 
+interface ThemeSource {
+  repoUrl: string
+  ref: string
+}
+
 interface CacheEntry<T> {
   value: T
   fetchedAt: number
@@ -55,6 +60,289 @@ function numberOrUndefined(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined
   const numeric = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(numeric) ? numeric : undefined
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function dateOnlyOrUndefined(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined
+  if (typeof value === 'number') {
+    const timestamp = value > 1e12 ? value : value * 1000
+    return new Date(timestamp).toISOString().slice(0, 10)
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+    const dateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (dateMatch) return dateMatch[1]
+    const numeric = Number(trimmed)
+    if (Number.isFinite(numeric)) {
+      const timestamp = numeric > 1e12 ? numeric : numeric * 1000
+      return new Date(timestamp).toISOString().slice(0, 10)
+    }
+    const parsed = Date.parse(trimmed)
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString().slice(0, 10)
+  }
+  return undefined
+}
+
+function dateTimeOrUndefined(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined
+  if (typeof value === 'number') {
+    const timestamp = value > 1e12 ? value : value * 1000
+    return new Date(timestamp).toISOString()
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+    const numeric = Number(trimmed)
+    if (Number.isFinite(numeric)) {
+      const timestamp = numeric > 1e12 ? numeric : numeric * 1000
+      return new Date(timestamp).toISOString()
+    }
+    const parsed = Date.parse(trimmed)
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString()
+  }
+  return undefined
+}
+
+function themeNameFromSource(source?: ThemeSource): string {
+  const repoName = source?.repoUrl
+    ?.split('/')
+    .filter(Boolean)
+    .at(-1)
+    ?.replace(/\.git$/i, '')
+    ?.trim()
+  if (!repoName) return 'pixel'
+  const normalized = repoName.replace(/^komari-theme-/i, '').replace(/_/g, '-').toLowerCase()
+  return normalized || 'pixel'
+}
+
+function normalizeProbeAppearance(input: ProbeAppearance | null | undefined, source?: ThemeSource): NonNullable<ProbePayload['appearance']> {
+  return {
+    theme: stringOrUndefined(input?.theme) || themeNameFromSource(source),
+    color_mode: input?.color_mode === 'dark' || input?.color_mode === 'system' ? input.color_mode : 'light',
+    revision: stringOrUndefined(input?.revision) || stringOrUndefined(source?.ref),
+  }
+}
+
+function normalizeProbeLicenseBadge(input: ProbePayload['license_badge']): ProbePayload['license_badge'] | undefined {
+  const name = stringOrUndefined(input?.name)
+  const displayName = stringOrUndefined(input?.display_name)
+  if (!name && !displayName) return undefined
+  return {
+    ...(name ? { name } : {}),
+    ...(displayName ? { display_name: displayName } : {}),
+  }
+}
+
+function normalizeDailyTraffic(rows: ProbeServer['daily_traffic']): ProbeDailyTraffic[] {
+  const result: ProbeDailyTraffic[] = []
+  for (const row of rows ?? []) {
+    const date = dateOnlyOrUndefined(row?.date)
+    if (!date) continue
+    const uplink = numberOrUndefined(row?.uplink) ?? 0
+    const downlink = numberOrUndefined(row?.downlink) ?? 0
+    result.push({
+      date,
+      uplink,
+      downlink,
+      total: numberOrUndefined(row?.total) ?? uplink + downlink,
+    })
+  }
+  return result
+}
+
+function normalizePingBuckets(input: ProbeBucket['buckets']): MmwxProbeSeriesBucket[] {
+  const buckets: MmwxProbeSeriesBucket[] = []
+  for (const bucket of input ?? []) {
+    const ms = numberOrUndefined(bucket?.ms)
+    const loss = numberOrUndefined(bucket?.loss)
+    if (ms === undefined && loss === undefined) continue
+    buckets.push({
+      ...(ms !== undefined ? { ms } : {}),
+      ...(loss !== undefined ? { loss } : {}),
+    })
+  }
+  return buckets
+}
+
+function normalizeProbePingSeries(input: ProbeBucket, index: number): ProbeBucket {
+  const label = stringOrUndefined(input.label) || stringOrUndefined(input.name) || stringOrUndefined(input.key) || `Ping ${index + 1}`
+  const currentMs = numberOrUndefined(input.current_ms ?? input.value ?? input.latency)
+  const lossPct = numberOrUndefined(input.loss_pct ?? input.loss)
+  const buckets = normalizePingBuckets(input.buckets)
+  if (buckets.length === 0 && (currentMs !== undefined || lossPct !== undefined)) {
+    buckets.push({
+      ...(currentMs !== undefined ? { ms: currentMs } : {}),
+      ...(lossPct !== undefined ? { loss: lossPct } : {}),
+    })
+  }
+  return {
+    ...(stringOrUndefined(input.key) ? { key: stringOrUndefined(input.key) } : {}),
+    label,
+    ...(stringOrUndefined(input.isp) ? { isp: stringOrUndefined(input.isp) } : {}),
+    current_ms: currentMs ?? -1,
+    loss_pct: lossPct ?? 0,
+    buckets,
+  }
+}
+
+function normalizeReturnRoute(input: ProbeReturnRoute): ProbeReturnRoute | undefined {
+  const routeType = stringOrUndefined(input.route_type ?? input.name ?? input.host ?? input.region ?? input.country)
+  const carrier = stringOrUndefined(input.carrier)
+  const region = stringOrUndefined(input.region)
+  const testedAt = dateTimeOrUndefined(input.tested_at)
+  const name = stringOrUndefined(input.name)
+  const host = stringOrUndefined(input.host)
+  const country = stringOrUndefined(input.country)
+  const latency = numberOrUndefined(input.latency)
+  const loss = numberOrUndefined(input.loss)
+  if (!routeType && !carrier && !region && !testedAt && !name && !host && !country && latency === undefined && loss === undefined) return undefined
+  return {
+    ...(carrier ? { carrier } : {}),
+    ...(region ? { region } : {}),
+    ...(routeType ? { route_type: routeType } : {}),
+    ...(testedAt ? { tested_at: testedAt } : {}),
+    ...(name ? { name } : {}),
+    ...(host ? { host } : {}),
+    ...(country ? { country } : {}),
+    ...(latency !== undefined ? { latency } : {}),
+    ...(loss !== undefined ? { loss } : {}),
+  }
+}
+
+function normalizeProbeServer(server: ProbeServer, index: number): ProbeServer {
+  const periodStart = dateOnlyOrUndefined(server.period_start)
+  const periodEnd = dateOnlyOrUndefined(server.period_end)
+  const dailyTrafficStart = dateOnlyOrUndefined(server.daily_traffic_start)
+  const dailyTrafficEnd = dateOnlyOrUndefined(server.daily_traffic_end)
+  const expiresAt = dateOnlyOrUndefined(server.expires_at)
+  const routes = server.return_routes ?? server.routes
+  const trafficPeriod = stringOrUndefined(server.trafficPeriod) || (periodStart && periodEnd ? `${periodStart}/${periodEnd}` : undefined)
+  const dailyTraffic = normalizeDailyTraffic(server.daily_traffic)
+  const returnRoutes = routes?.map((route) => normalizeReturnRoute(route)).filter((route): route is ProbeReturnRoute => route !== undefined)
+  const ping = server.ping?.map(normalizeProbePingSeries)
+  return {
+    id: server.id,
+    name: stringOrUndefined(server.name) || stringOrUndefined(server.host) || `MMWX Node ${index + 1}`,
+    ...(stringOrUndefined(server.host) ? { host: stringOrUndefined(server.host) } : {}),
+    ...(stringOrUndefined(server.cpu_name) ? { cpu_name: stringOrUndefined(server.cpu_name) } : {}),
+    ...(stringOrUndefined(server.cpu_model ?? server.cpu_name) ? { cpu_model: stringOrUndefined(server.cpu_model ?? server.cpu_name) } : {}),
+    ...(stringOrUndefined(server.virtualization) ? { virtualization: stringOrUndefined(server.virtualization) } : {}),
+    ...(stringOrUndefined(server.arch) ? { arch: stringOrUndefined(server.arch) } : {}),
+    ...(numberOrUndefined(server.cpu_cores) !== undefined ? { cpu_cores: numberOrUndefined(server.cpu_cores) } : {}),
+    ...(numberOrUndefined(server.cpu_physical_cores) !== undefined ? { cpu_physical_cores: numberOrUndefined(server.cpu_physical_cores) } : {}),
+    ...(numberOrUndefined(server.cpu_threads) !== undefined ? { cpu_threads: numberOrUndefined(server.cpu_threads) } : {}),
+    ...(stringOrUndefined(server.os) ? { os: stringOrUndefined(server.os) } : {}),
+    ...(stringOrUndefined(server.kernel_version) ? { kernel_version: stringOrUndefined(server.kernel_version) } : {}),
+    ...(stringOrUndefined(server.kernel) ? { kernel: stringOrUndefined(server.kernel) } : {}),
+    ...(stringOrUndefined(server.gpu_name) ? { gpu_name: stringOrUndefined(server.gpu_name) } : {}),
+    ...(numberOrUndefined(server.gpu) !== undefined ? { gpu: numberOrUndefined(server.gpu) } : {}),
+    ...(stringOrUndefined(server.region) ? { region: stringOrUndefined(server.region) } : {}),
+    ...(stringOrUndefined(server.region_country) ? { region_country: stringOrUndefined(server.region_country) } : {}),
+    ...(stringOrUndefined(server.region_name) ? { region_name: stringOrUndefined(server.region_name) } : {}),
+    ...(stringOrUndefined(server.region_city) ? { region_city: stringOrUndefined(server.region_city) } : {}),
+    ...(stringOrUndefined(server.provider_name) ? { provider_name: stringOrUndefined(server.provider_name) } : {}),
+    ...(stringOrUndefined(server.provider_url) ? { provider_url: stringOrUndefined(server.provider_url) } : {}),
+    ...(stringOrUndefined(server.country) ? { country: stringOrUndefined(server.country) } : {}),
+    ...(stringOrUndefined(server.revision) ? { revision: stringOrUndefined(server.revision) } : {}),
+    online: server.online !== false,
+    ...(numberOrUndefined(server.cpu) !== undefined ? { cpu: numberOrUndefined(server.cpu) } : {}),
+    ...(numberOrUndefined(server.cpu_pct) !== undefined ? { cpu_pct: numberOrUndefined(server.cpu_pct) } : {}),
+    ...(numberOrUndefined(server.memory) !== undefined ? { memory: numberOrUndefined(server.memory) } : {}),
+    ...(numberOrUndefined(server.mem_used) !== undefined ? { mem_used: numberOrUndefined(server.mem_used) } : {}),
+    ...(numberOrUndefined(server.mem_total) !== undefined ? { mem_total: numberOrUndefined(server.mem_total) } : {}),
+    ...(numberOrUndefined(server.swap) !== undefined ? { swap: numberOrUndefined(server.swap) } : {}),
+    ...(numberOrUndefined(server.swap_total) !== undefined ? { swap_total: numberOrUndefined(server.swap_total) } : {}),
+    ...(numberOrUndefined(server.disk_used) !== undefined ? { disk_used: numberOrUndefined(server.disk_used) } : {}),
+    ...(numberOrUndefined(server.disk_total) !== undefined ? { disk_total: numberOrUndefined(server.disk_total) } : {}),
+    ...(Array.isArray(server.load) ? { load: server.load.map((value) => numberOrUndefined(value) ?? value) } : stringOrUndefined(server.loadavg) ? { loadavg: stringOrUndefined(server.loadavg) } : numberOrUndefined(server.load) !== undefined ? { load: numberOrUndefined(server.load) } : {}),
+    ...(numberOrUndefined(server.temp) !== undefined ? { temp: numberOrUndefined(server.temp) } : {}),
+    ...(numberOrUndefined(server.upload) !== undefined ? { upload: numberOrUndefined(server.upload) } : {}),
+    ...(numberOrUndefined(server.upload_speed) !== undefined ? { upload_speed: numberOrUndefined(server.upload_speed) } : {}),
+    ...(numberOrUndefined(server.download) !== undefined ? { download: numberOrUndefined(server.download) } : {}),
+    ...(numberOrUndefined(server.download_speed) !== undefined ? { download_speed: numberOrUndefined(server.download_speed) } : {}),
+    ...(numberOrUndefined(server.uplink) !== undefined ? { uplink: numberOrUndefined(server.uplink) } : {}),
+    ...(numberOrUndefined(server.downlink) !== undefined ? { downlink: numberOrUndefined(server.downlink) } : {}),
+    ...(numberOrUndefined(server.totalUpload) !== undefined ? { totalUpload: numberOrUndefined(server.totalUpload) } : {}),
+    ...(numberOrUndefined(server.totalDownload) !== undefined ? { totalDownload: numberOrUndefined(server.totalDownload) } : {}),
+    ...(numberOrUndefined(server.net_total_up) !== undefined ? { net_total_up: numberOrUndefined(server.net_total_up) } : {}),
+    ...(numberOrUndefined(server.net_total_down) !== undefined ? { net_total_down: numberOrUndefined(server.net_total_down) } : {}),
+    ...(trafficPeriod ? { trafficPeriod } : {}),
+    ...(dailyTraffic.length > 0 ? { daily_traffic: dailyTraffic } : {}),
+    ...(stringOrUndefined(server.traffic_source) ? { traffic_source: stringOrUndefined(server.traffic_source) } : {}),
+    ...(stringOrUndefined(server.traffic_used_scope) ? { traffic_used_scope: stringOrUndefined(server.traffic_used_scope) } : {}),
+    ...(numberOrUndefined(server.traffic_adjustment) !== undefined ? { traffic_adjustment: numberOrUndefined(server.traffic_adjustment) } : {}),
+    ...(numberOrUndefined(server.boot_traffic_up) !== undefined ? { boot_traffic_up: numberOrUndefined(server.boot_traffic_up) } : {}),
+    ...(numberOrUndefined(server.boot_traffic_down) !== undefined ? { boot_traffic_down: numberOrUndefined(server.boot_traffic_down) } : {}),
+    ...(stringOrUndefined(server.boot_traffic_scope) ? { boot_traffic_scope: stringOrUndefined(server.boot_traffic_scope) } : {}),
+    ...(numberOrUndefined(server.cumulative_up) !== undefined ? { cumulative_up: numberOrUndefined(server.cumulative_up) } : {}),
+    ...(numberOrUndefined(server.cumulative_down) !== undefined ? { cumulative_down: numberOrUndefined(server.cumulative_down) } : {}),
+    ...(stringOrUndefined(server.cumulative_traffic_scope) ? { cumulative_traffic_scope: stringOrUndefined(server.cumulative_traffic_scope) } : {}),
+    ...(stringOrUndefined(server.daily_traffic_scope) ? { daily_traffic_scope: stringOrUndefined(server.daily_traffic_scope) } : {}),
+    ...(dailyTrafficStart ? { daily_traffic_start: dailyTrafficStart } : {}),
+    ...(dailyTrafficEnd ? { daily_traffic_end: dailyTrafficEnd } : {}),
+    ...(stringOrUndefined(server.traffic_stats_mode) ? { traffic_stats_mode: stringOrUndefined(server.traffic_stats_mode) } : {}),
+    ...(numberOrUndefined(server.traffic_used_up) !== undefined ? { traffic_used_up: numberOrUndefined(server.traffic_used_up) } : {}),
+    ...(numberOrUndefined(server.traffic_used_down) !== undefined ? { traffic_used_down: numberOrUndefined(server.traffic_used_down) } : {}),
+    ...(numberOrUndefined(server.traffic_used_total) !== undefined ? { traffic_used_total: numberOrUndefined(server.traffic_used_total) } : {}),
+    ...(numberOrUndefined(server.traffic_used) !== undefined ? { traffic_used: numberOrUndefined(server.traffic_used) } : {}),
+    ...(periodStart ? { period_start: periodStart } : {}),
+    ...(periodEnd ? { period_end: periodEnd } : {}),
+    ...(numberOrUndefined(server.process) !== undefined ? { process: numberOrUndefined(server.process) } : {}),
+    ...(numberOrUndefined(server.connections) !== undefined ? { connections: numberOrUndefined(server.connections) } : {}),
+    ...(numberOrUndefined(server.connections_udp) !== undefined ? { connections_udp: numberOrUndefined(server.connections_udp) } : {}),
+    ...(numberOrUndefined(server.uptime) !== undefined ? { uptime: numberOrUndefined(server.uptime) } : {}),
+    ...(numberOrUndefined(server.weight) !== undefined ? { weight: numberOrUndefined(server.weight) } : {}),
+    ...(numberOrUndefined(server.price) !== undefined ? { price: numberOrUndefined(server.price) } : {}),
+    ...(numberOrUndefined(server.billing_cycle) !== undefined ? { billing_cycle: numberOrUndefined(server.billing_cycle) } : {}),
+    auto_renewal: server.auto_renewal === true,
+    ...(stringOrUndefined(server.currency) ? { currency: stringOrUndefined(server.currency) } : {}),
+    ...(dateOnlyOrUndefined(server.expired_at) ? { expired_at: dateOnlyOrUndefined(server.expired_at) } : {}),
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
+    ...(numberOrUndefined(server.renewal_price) !== undefined ? { renewal_price: numberOrUndefined(server.renewal_price) } : {}),
+    ...(numberOrUndefined(server.renewal_price_cny) !== undefined ? { renewal_price_cny: numberOrUndefined(server.renewal_price_cny) } : {}),
+    ...(stringOrUndefined(server.renewal_cycle) ? { renewal_cycle: stringOrUndefined(server.renewal_cycle) } : {}),
+    ...(stringOrUndefined(server.renewal_currency) ? { renewal_currency: stringOrUndefined(server.renewal_currency) } : {}),
+    ...(stringOrUndefined(server.group) ? { group: stringOrUndefined(server.group) } : {}),
+    ...(stringOrUndefined(server.tags) ? { tags: stringOrUndefined(server.tags) } : {}),
+    hidden: server.hidden === true,
+    ...(numberOrUndefined(server.traffic_limit) !== undefined ? { traffic_limit: numberOrUndefined(server.traffic_limit) } : {}),
+    ...(stringOrUndefined(server.traffic_limit_type) ? { traffic_limit_type: stringOrUndefined(server.traffic_limit_type) } : {}),
+    ...(dateTimeOrUndefined(server.created_at) ? { created_at: dateTimeOrUndefined(server.created_at) } : {}),
+    ...(dateTimeOrUndefined(server.updated_at) ? { updated_at: dateTimeOrUndefined(server.updated_at) } : {}),
+    ...(stringOrUndefined(server.public_remark) ? { public_remark: stringOrUndefined(server.public_remark) } : {}),
+    ...(ping?.length ? { ping } : {}),
+    ...(returnRoutes?.length ? { return_routes: returnRoutes } : {}),
+    ...(returnRoutes?.length ? { routes: returnRoutes } : {}),
+  }
+}
+
+function toProbePayload(payload: ProbePayload, source?: ThemeSource): ProbePayload {
+  const servers = payload.servers.map((server, index) => normalizeProbeServer(server, index))
+  const appearance = normalizeProbeAppearance(payload.appearance, source)
+  return {
+    enabled: payload.enabled !== false,
+    show_globe: payload.show_globe ?? true,
+    show_daily_trend: payload.show_daily_trend ?? true,
+    show_traffic_hotspots: payload.show_traffic_hotspots ?? true,
+    show_traffic_7d: payload.show_traffic_7d ?? true,
+    show_resource_heatmap: payload.show_resource_heatmap ?? true,
+    show_traffic_quota: payload.show_traffic_quota ?? true,
+    show_renewal_timeline: payload.show_renewal_timeline ?? true,
+    show_health_score: payload.show_health_score ?? true,
+    title: stringOrUndefined(payload.title) || '妙妙屋 X 主控',
+    ...(stringOrUndefined(payload.logo) ? { logo: stringOrUndefined(payload.logo) } : {}),
+    appearance,
+    ...(normalizeProbeLicenseBadge(payload.license_badge) ? { license_badge: normalizeProbeLicenseBadge(payload.license_badge) } : {}),
+    servers,
+    ...(payload.updatedAt !== undefined ? { updatedAt: payload.updatedAt } : {}),
+  }
 }
 
 function loadAverage(value: unknown): { load1?: number; load5?: number; load15?: number } | undefined {
@@ -105,6 +393,7 @@ export class KomariDataService {
   public constructor(
     private readonly client: DataClient,
     private readonly cacheTtlMs: number,
+    private readonly themeSource?: ThemeSource,
   ) {}
 
   public async getSnapshot(): Promise<KomariSnapshot> {
@@ -112,7 +401,7 @@ export class KomariDataService {
   }
 
   public async getProbePayload(): Promise<ProbePayload> {
-    return (await this.getSnapshotValue()).payload
+    return toProbePayload((await this.getSnapshotValue()).payload, this.themeSource)
   }
 
   public async getNodesInformation(): Promise<KomariPublicNode[]> {

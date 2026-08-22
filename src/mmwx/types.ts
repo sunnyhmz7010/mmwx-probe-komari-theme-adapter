@@ -1,4 +1,47 @@
+export interface ProbeAppearance {
+  theme: string
+  color_mode?: 'light' | 'dark' | 'system'
+  revision?: string
+}
+
+export interface ProbeLicenseBadge {
+  name?: string
+  display_name?: string
+}
+
+export interface ProbeDailyTraffic {
+  date?: string | null
+  uplink?: number | string | null
+  downlink?: number | string | null
+  total?: number | string | null
+}
+
+export interface ProbeReturnRoute {
+  carrier?: 'telecom' | 'unicom' | 'mobile' | string | null
+  region?: string | null
+  route_type?: string | null
+  tested_at?: string | number | null
+  name?: string | null
+  host?: string | null
+  country?: string | null
+  latency?: number | string | null
+  loss?: number | string | null
+}
+
 export interface ProbePayload {
+  enabled?: boolean
+  show_globe?: boolean
+  show_daily_trend?: boolean
+  show_traffic_hotspots?: boolean
+  show_traffic_7d?: boolean
+  show_resource_heatmap?: boolean
+  show_traffic_quota?: boolean
+  show_renewal_timeline?: boolean
+  show_health_score?: boolean
+  title?: string | null
+  logo?: string | null
+  appearance?: ProbeAppearance | null
+  license_badge?: ProbeLicenseBadge | null
   servers: ProbeServer[]
   updatedAt?: string | number | null
 }
@@ -13,6 +56,7 @@ export interface ProbeServer {
   arch?: string | null
   cpu_cores?: number | string | null
   cpu_physical_cores?: number | string | null
+  cpu_threads?: number | string | null
   os?: string | null
   kernel_version?: string | null
   kernel?: string | null
@@ -25,6 +69,7 @@ export interface ProbeServer {
   provider_name?: string | null
   provider_url?: string | null
   country?: string | null
+  revision?: string | null
   online?: boolean | null
   cpu?: number | string | null
   cpu_pct?: number | string | null
@@ -50,13 +95,23 @@ export interface ProbeServer {
   net_total_down?: number | string | null
   trafficPeriod?: string | null
   daily_traffic?: ProbeDailyTraffic[] | null
+  traffic_source?: 'xray' | 'system' | string | null
+  traffic_used_scope?: 'configured_period' | 'counter_since_reset' | string | null
+  traffic_adjustment?: number | string | null
+  boot_traffic_up?: number | string | null
+  boot_traffic_down?: number | string | null
+  boot_traffic_scope?: 'current_boot' | string | null
+  cumulative_up?: number | string | null
+  cumulative_down?: number | string | null
+  cumulative_traffic_scope?: 'current_boot' | string | null
+  daily_traffic_scope?: 'configured_period_and_recent_7d' | 'recent_7d' | string | null
+  daily_traffic_start?: string | number | null
+  daily_traffic_end?: string | number | null
+  traffic_stats_mode?: 'both' | 'upload' | 'download' | 'max' | string | null
   traffic_used_up?: number | string | null
   traffic_used_down?: number | string | null
   traffic_used_total?: number | string | null
   traffic_used?: number | string | null
-  cumulative_up?: number | string | null
-  cumulative_down?: number | string | null
-  traffic_stats_mode?: string | null
   period_start?: string | number | null
   period_end?: string | number | null
   process?: number | string | null
@@ -70,6 +125,10 @@ export interface ProbeServer {
   currency?: string | null
   expired_at?: string | number | null
   expires_at?: string | number | null
+  renewal_price_cny?: number | string | null
+  renewal_price?: number | string | null
+  renewal_cycle?: 'month' | 'quarter' | 'half_year' | 'year' | string | null
+  renewal_currency?: string
   group?: string | null
   tags?: string | null
   hidden?: boolean | null
@@ -79,35 +138,21 @@ export interface ProbeServer {
   updated_at?: string | number | null
   public_remark?: string | null
   ping?: ProbeBucket[] | null
+  return_routes?: ProbeReturnRoute[] | null
   routes?: ProbeReturnRoute[] | null
-}
-
-export interface ProbeDailyTraffic {
-  date?: string | null
-  uplink?: number | string | null
-  downlink?: number | string | null
-  total?: number | string | null
 }
 
 export interface ProbeBucket {
   key?: string | null
   name?: string | null
   label?: string | null
+  isp?: string | null
   value?: number | string | null
   loss?: number | string | null
   latency?: number | string | null
   current_ms?: number | string | null
   loss_pct?: number | string | null
   buckets?: MmwxProbeSeriesBucket[]
-}
-
-export interface ProbeReturnRoute {
-  name?: string | null
-  host?: string | null
-  region?: string | null
-  country?: string | null
-  latency?: number | string | null
-  loss?: number | string | null
 }
 
 export interface SeriesQuery {

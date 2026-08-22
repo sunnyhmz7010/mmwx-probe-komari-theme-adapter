@@ -322,3 +322,90 @@ test('caches series by normalized query key and resolves the requested node hist
   assert.deepEqual(first, second)
   assert.deepEqual(first.records[0], { client: 'mmwx-1', time: '2026-08-21T00:00:00.000Z', cpu: 3 })
 })
+
+test('wraps raw probe payload into theme-ready envelope with normalized fields', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      servers: [{
+        name: 'node-0',
+        host: 'node.example.com',
+        cpu_name: 'AMD EPYC 7B13',
+        virtualization: 'kvm',
+        arch: 'amd64',
+        cpu_cores: '2',
+        cpu_physical_cores: '4',
+        cpu_threads: '8',
+        os: 'Debian GNU/Linux 12',
+        kernel: '6.1.0-34-amd64',
+        region_city: 'Tokyo',
+        region_name: 'Kanto',
+        region_country: 'JP',
+        online: true,
+        cpu_pct: '3.5',
+        mem_used: '388132864',
+        mem_total: '1004605440',
+        disk_used: '7899017216',
+        disk_total: '20922114048',
+        upload_speed: '2024',
+        download_speed: '1802',
+        traffic_used_up: '123',
+        traffic_used_down: '456',
+        traffic_used_total: '579',
+        traffic_used_scope: 'configured_period',
+        traffic_stats_mode: 'both',
+        traffic_source: 'system',
+        traffic_adjustment: '-12',
+        boot_traffic_up: '321',
+        boot_traffic_down: '654',
+        cumulative_up: '987',
+        cumulative_down: '654',
+        daily_traffic: [{ date: '2026-08-04T00:00:00Z', uplink: '10', downlink: '20', total: '30' }],
+        period_start: '2026-08-04T00:00:00.000Z',
+        period_end: '2026-09-04T00:00:00.000Z',
+        expires_at: '2026-09-21T00:00:00.000Z',
+        renewal_price: '9.5',
+        renewal_price_cny: '68',
+        renewal_cycle: 'month',
+        renewal_currency: 'CNY',
+        ping: [{
+          key: 'google',
+          label: 'Google',
+          isp: 'IIJ',
+          value: '25',
+          loss: '1',
+          buckets: [{ ms: '25', loss: '1' }],
+        }],
+        return_routes: [{
+          carrier: 'telecom',
+          route_type: 'CMIN',
+          tested_at: '2026-08-21T00:00:00.000Z',
+        }],
+      }],
+    } as ProbePayload),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
+  }, 1000, { repoUrl: 'https://github.com/vaspike/junimo', ref: 'main' })
+
+  const payload = await service.getProbePayload()
+  const server = payload.servers[0]
+
+  assert.equal(payload.enabled, true)
+  assert.equal(payload.show_globe, true)
+  assert.equal(payload.show_health_score, true)
+  assert.equal(payload.title, '妙妙屋 X 主控')
+  assert.deepEqual(payload.appearance, { theme: 'junimo', color_mode: 'light', revision: 'main' })
+  assert.equal(server.cpu_model, 'AMD EPYC 7B13')
+  assert.equal(server.cpu_cores, 2)
+  assert.equal(server.cpu_threads, 8)
+  assert.equal(server.cpu_pct, 3.5)
+  assert.equal(server.mem_used, 388132864)
+  assert.equal(server.daily_traffic?.[0]?.date, '2026-08-04')
+  assert.equal(server.period_start, '2026-08-04')
+  assert.equal(server.period_end, '2026-09-04')
+  assert.equal(server.expires_at, '2026-09-21')
+  assert.equal(server.renewal_price_cny, 68)
+  assert.equal(server.traffic_adjustment, -12)
+  assert.equal(server.traffic_used_total, 579)
+  assert.equal(server.ping?.[0]?.current_ms, 25)
+  assert.equal(server.ping?.[0]?.loss_pct, 1)
+  assert.equal(server.return_routes?.[0]?.route_type, 'CMIN')
+})
