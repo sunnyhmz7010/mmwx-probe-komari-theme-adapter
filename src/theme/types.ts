@@ -15,5 +15,7 @@ export interface BuildPlan {
 export interface LoadedTheme {
   directory: string
   indexPath: string
+  short?: string
+  themeSettings?: Record<string, unknown> | null
   source: ThemeSource
 }

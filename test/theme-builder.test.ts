@@ -48,7 +48,7 @@ test('builds a package theme when the repository root also contains source index
   }
 })
 
-test('keeps root static fallback when package theme lacks a lockfile', async () => {
+test('builds package themes without a lockfile using npm install', async () => {
   const repoDir = await packageFixture({
     'index.html': '<!doctype html>',
     'package.json': JSON.stringify({ scripts: { build: 'build' } }),
@@ -56,8 +56,10 @@ test('keeps root static fallback when package theme lacks a lockfile', async () 
 
   try {
     const plan = await detectBuildPlan(repoDir)
-    assert.equal(plan.packageManager, 'none')
-    assert.deepEqual(plan.outputCandidates, ['.'])
+    assert.equal(plan.packageManager, 'npm')
+    assert.deepEqual(plan.installArgs, ['install'])
+    assert.deepEqual(plan.buildArgs, ['run', 'build'])
+    assert.deepEqual(plan.outputCandidates, ['dist', 'build', 'out', 'public', '.'])
   } finally {
     await rm(repoDir, { recursive: true, force: true })
   }

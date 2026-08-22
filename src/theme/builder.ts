@@ -67,7 +67,7 @@ function packageManagerFor(repoDir: string, packageJson: Record<string, unknown>
   if (!packageJson.scripts || typeof packageJson.scripts !== 'object' || !('build' in packageJson.scripts)) {
     throw new Error('Theme package.json must declare a build script')
   }
-  throw new Error('Theme package must include pnpm-lock.yaml, bun.lock, bun.lockb, or package-lock.json')
+  return 'npm'
 }
 
 function hasSupportedLockfile(repoDir: string): boolean {
@@ -109,11 +109,8 @@ export async function detectBuildPlan(repoDir: string): Promise<BuildPlan> {
     }
     throw new Error('Theme package.json must declare a build script')
   }
-  if (!hasSupportedLockfile(resolvedRepo) && hasRootIndex) {
-    return { packageManager: 'none', installArgs: [], buildArgs: [], outputCandidates: ['.'] }
-  }
   const packageManager = packageManagerFor(resolvedRepo, packageJson)
-  const commands = commandFor(packageManager)
+  const commands = hasSupportedLockfile(resolvedRepo) ? commandFor(packageManager) : { installArgs: ['install'], buildArgs: ['run', 'build'] }
   return { packageManager, ...commands, outputCandidates: [...OUTPUT_CANDIDATES] }
 }
 

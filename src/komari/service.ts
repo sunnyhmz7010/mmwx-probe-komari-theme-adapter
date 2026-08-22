@@ -41,6 +41,8 @@ interface DataClient {
 interface ThemeSource {
   repoUrl: string
   ref: string
+  themeShort?: string
+  themeSettings?: Record<string, unknown> | null
 }
 
 interface CacheEntry<T> {
@@ -66,6 +68,15 @@ function stringOrUndefined(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
 }
 
 function dateOnlyOrUndefined(value: unknown): string | undefined {
@@ -111,6 +122,8 @@ function dateTimeOrUndefined(value: unknown): string | undefined {
 }
 
 function themeNameFromSource(source?: ThemeSource): string {
+  const short = stringOrUndefined(source?.themeShort)
+  if (short) return short
   const repoName = source?.repoUrl
     ?.split('/')
     .filter(Boolean)
@@ -118,7 +131,7 @@ function themeNameFromSource(source?: ThemeSource): string {
     ?.replace(/\.git$/i, '')
     ?.trim()
   if (!repoName) return 'pixel'
-  const normalized = repoName.replace(/^komari-theme-/i, '').replace(/_/g, '-').toLowerCase()
+  const normalized = repoName.replace(/^komari-theme-/i, '').replace(/_/g, '-').trim()
   return normalized || 'pixel'
 }
 
@@ -414,16 +427,19 @@ export class KomariDataService {
   }
 
   public async getPublicSettings(): Promise<KomariPublicSettings> {
+    const probe = await this.getProbePayload()
+    const themeSettings = this.themeSource?.themeSettings ?? {}
+    const logo = stringOrUndefined(probe.logo)
     return {
-      sitename: '妙妙屋 X 主控',
+      sitename: stringOrUndefined(probe.title) || '妙妙屋 X 主控',
       description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
-      theme: 'AdhesiveNote',
-      theme_settings: null,
+      theme: probe.appearance?.theme || themeNameFromSource(this.themeSource),
+      theme_settings: themeSettings,
       private_site: false,
       record_enabled: true,
       record_preserve_time: 24,
       ping_record_preserve_time: 24,
-      custom_head: '',
+      custom_head: logo ? `<link rel="icon" href="${escapeHtmlAttribute(logo)}">` : '',
       custom_body: '',
       oauth_enable: false,
       oauth_provider: '',

@@ -46,8 +46,7 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
           return json(response, 200, envelope(snapshot.nodes))
         }
         if (url.pathname === '/api/public') {
-          const snapshot = await service.getSnapshot()
-          return json(response, 200, envelope({ nodes: snapshot.nodes.length }))
+          return json(response, 200, envelope(await service.getPublicSettings()))
         }
         if (url.pathname === '/api/me') {
           return json(response, 200, { logged_in: false })

@@ -13,6 +13,24 @@ interface TestResponse {
   body: unknown
 }
 
+const defaultPublicSettings = {
+  sitename: '妙妙屋 X 主控',
+  description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+  theme: 'junimo',
+  theme_settings: {},
+  private_site: false,
+  record_enabled: true,
+  record_preserve_time: 24,
+  ping_record_preserve_time: 24,
+  custom_head: '',
+  custom_body: '',
+  oauth_enable: false,
+  oauth_provider: '',
+  disable_password_login: false,
+  cors_origin_check_enabled: true,
+  visitor_audit_enabled: false,
+}
+
 function fakeService(overrides: Record<string, unknown> = {}): KomariDataService {
   return {
     getProbePayload: async () => ({
@@ -56,6 +74,7 @@ function fakeService(overrides: Record<string, unknown> = {}): KomariDataService
       count: 1,
       records: [{ client: 'mmwx-0', time: '2026-08-21T00:00:00.000Z', cpu: 1 }],
     }),
+    getPublicSettings: async () => defaultPublicSettings,
     ...overrides,
   } as unknown as KomariDataService
 }
@@ -108,7 +127,7 @@ test('API routes return Komari-compatible public resources', async () => {
 
     const publicInfo = await request(baseUrl, '/api/public')
     assert.equal(publicInfo.status, 200)
-    assert.deepEqual(publicInfo.body, { status: 'success', message: 'success', data: { nodes: 1 } })
+    assert.deepEqual(publicInfo.body, { status: 'success', message: 'success', data: defaultPublicSettings })
 
     const me = await request(baseUrl, '/api/me')
     assert.equal(me.status, 200)

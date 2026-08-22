@@ -409,3 +409,39 @@ test('wraps raw probe payload into theme-ready envelope with normalized fields',
   assert.equal(server.ping?.[0]?.loss_pct, 1)
   assert.equal(server.return_routes?.[0]?.route_type, 'CMIN')
 })
+
+test('projects public settings from probe snapshot and loaded theme metadata', async () => {
+  const themeSettings = { layout: 'paper', accent: 'blue' }
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      title: '星穹主控',
+      appearance: { color_mode: 'dark' },
+      servers: [server()],
+    } as ProbePayload),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
+  }, 1000, {
+    repoUrl: 'https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism',
+    ref: 'main',
+    themeSettings,
+  } as never)
+
+  const settings = await service.getPublicSettings()
+
+  assert.deepEqual(settings, {
+    sitename: '星穹主控',
+    description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+    theme: 'Glassmorphism',
+    theme_settings: themeSettings,
+    private_site: false,
+    record_enabled: true,
+    record_preserve_time: 24,
+    ping_record_preserve_time: 24,
+    custom_head: '',
+    custom_body: '',
+    oauth_enable: false,
+    oauth_provider: '',
+    disable_password_login: false,
+    cors_origin_check_enabled: true,
+    visitor_audit_enabled: false,
+  })
+})
