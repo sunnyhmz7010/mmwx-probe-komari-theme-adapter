@@ -65,6 +65,14 @@ function numberOrUndefined(value: unknown): number | undefined {
   return Number.isFinite(numeric) ? numeric : undefined
 }
 
+function firstFinite(values: readonly unknown[]): number | undefined {
+  for (const value of values) {
+    const numeric = numberOrUndefined(value)
+    if (numeric !== undefined) return numeric
+  }
+  return undefined
+}
+
 function stringOrUndefined(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
@@ -346,7 +354,8 @@ function normalizeProbeServer(server: ProbeServer, index: number): ProbeServer {
 function toProbePayload(payload: ProbePayload, source?: ThemeSource): ProbePayload {
   const servers = payload.servers.map((server, index) => normalizeProbeServer(server, index))
   const appearance = normalizeProbeAppearance(payload.appearance, source)
-  const logo = stringOrUndefined(payload.logo ?? payload.icon)
+  const logo = stringOrUndefined(payload.logo)
+  const icon = stringOrUndefined(payload.icon)
   return {
     enabled: payload.enabled !== false,
     show_globe: payload.show_globe ?? true,
@@ -359,7 +368,7 @@ function toProbePayload(payload: ProbePayload, source?: ThemeSource): ProbePaylo
     show_health_score: payload.show_health_score ?? true,
     title: stringOrUndefined(payload.title) || themeTitleFromSource(source),
     ...(logo ? { logo } : {}),
-    ...(logo ? { icon: logo } : {}),
+    ...(icon ? { icon } : {}),
     appearance,
     ...(normalizeProbeLicenseBadge(payload.license_badge) ? { license_badge: normalizeProbeLicenseBadge(payload.license_badge) } : {}),
     servers,
@@ -441,12 +450,12 @@ export class KomariDataService {
 
   public async getPublicSettings(): Promise<KomariPublicSettings> {
     const probe = await this.getProbePayload()
-    const themeSettings = this.themeSource?.themeSettings ?? {}
-    const logo = stringOrUndefined(probe.logo ?? probe.icon)
+    const themeSettings = await this.resolveThemeSettings()
+    const icon = stringOrUndefined(probe.icon)
     const sitename = stringOrUndefined(probe.title) || themeTitleFromSource(this.themeSource)
     const customHeadParts: string[] = []
-    if (logo) {
-      customHeadParts.push(`<link rel="icon" href="${escapeHtmlAttribute(logo)}">`)
+    if (icon) {
+      customHeadParts.push(`<link rel="icon" href="${escapeHtmlAttribute(icon)}">`)
     }
     if (sitename) {
       customHeadParts.push(`<script>document.title=${JSON.stringify(sitename).replaceAll('<', '\\u003c')};</script>`)
@@ -512,13 +521,33 @@ export class KomariDataService {
   public async getQueryMetrics(query: SeriesQuery): Promise<KomariQueryMetrics> {
     const entityIds = await this.resolveEntityIdsOrAll(query)
     const metricKeys = resolveMetricKeys(query)
-    const payload = await this.getSeries(seriesQuery(query, {
-      server: entityIds[0] ? String(serverIndexFromUuid(entityIds[0])) : query.server,
-      range: rangeFromQuery(query),
-      metric: stringQueryValue(query.metric) || 'system',
-    }))
-    const pointsByEntity = collectQueryMetricSeries(payload, entityIds, metricKeys)
-    const series = [...pointsByEntity.values()].flat()
+    const systemMetricKeys = metricKeys.filter((metricKey) => !isPingMetricKey(metricKey))
+    const pingMetricKeys = metricKeys.filter(isPingMetricKey)
+    const series: KomariMetricSeries[] = []
+
+    if (systemMetricKeys.length > 0) {
+      const [payload, current] = await Promise.all([
+        this.getSeries(seriesQuery(query, {
+          server: entityIds[0] ? String(serverIndexFromUuid(entityIds[0])) : query.server,
+          range: rangeFromQuery(query),
+          metric: stringQueryValue(query.metric) || 'system',
+        })),
+        this.getProbePayload(),
+      ])
+      const pointsByEntity = collectQueryMetricSeries(payload, entityIds, systemMetricKeys, current)
+      series.push(...[...pointsByEntity.values()].flat())
+    }
+
+    if (pingMetricKeys.length > 0) {
+      const histories = await Promise.all(entityIds.map(async (entityId) => this.getPingHistory({ ...query, uuid: entityId })))
+      series.push(...collectPingQueryMetricSeries(
+        mergePingHistories(histories),
+        entityIds,
+        pingMetricKeys,
+        normalizeTaskIdFilter(resolveNumericList(query.task_ids ?? query.task_id)),
+      ))
+    }
+
     const { start, end } = seriesBounds(series)
     return {
       start,
@@ -530,7 +559,7 @@ export class KomariDataService {
 
   public async getPingMetricStats(query: SeriesQuery): Promise<KomariPingMetricStats> {
     const entityIds = await this.resolveEntityIdsOrAll(query)
-    const taskIds = resolveNumericList(query.task_ids)
+    const taskIds = normalizeTaskIdFilter(resolveNumericList(query.task_ids ?? query.task_id))
     const histories = await Promise.all(entityIds.map(async (entityId) => this.getPingHistory({ ...query, uuid: entityId })))
     const combined = mergePingHistories(histories)
     const stats = summarisePingMetricStats(combined, entityIds, taskIds)
@@ -569,6 +598,27 @@ export class KomariDataService {
 
   public async getPingRecords(query: SeriesQuery): Promise<KomariPingRecords> {
     return toKomariPingRecords(await this.getPingHistory(query))
+  }
+
+  private async resolveThemeSettings(): Promise<Record<string, unknown>> {
+    const base = this.themeSource?.themeSettings ?? {}
+    if (!isJunimoTheme(this.themeSource)) return base
+    if (base.homepagePingBindings !== undefined) return base
+
+    try {
+      const tasks = await this.getPublicPingTasks()
+      const homepagePingBindings = Object.fromEntries(tasks
+        .filter((task) => task.id > 0 && task.clients.length > 0)
+        .map((task) => [String(task.id), task.clients]))
+      if (Object.keys(homepagePingBindings).length === 0) return base
+      return {
+        ...(base.showPingChart === undefined ? { showPingChart: true } : {}),
+        ...base,
+        homepagePingBindings,
+      }
+    } catch {
+      return base
+    }
   }
 
   private async getSnapshotValue(): Promise<SnapshotValue> {
@@ -752,10 +802,28 @@ function dedupePublicPingTasks(tasks: readonly KomariPublicPingTask[]): KomariPu
   return [...seen.values()]
 }
 
+function isPingMetricKey(metricKey: string): boolean {
+  return metricKey === 'ping.latency_ms' || metricKey === 'ping.loss'
+}
+
+function isJunimoTheme(source?: ThemeSource): boolean {
+  const values = [
+    source?.themeShort,
+    themeNameFromSource(source),
+    source?.repoUrl,
+  ]
+  return values.some((value) => typeof value === 'string' && value.toLowerCase().includes('junimo'))
+}
+
+function normalizeTaskIdFilter(taskIds: readonly number[]): number[] {
+  return [...new Set(taskIds.map((taskId) => taskId === 0 ? 1 : Math.trunc(taskId)).filter((taskId) => Number.isFinite(taskId)))]
+}
+
 function collectQueryMetricSeries(
   payload: ProbeSeriesPayload,
   entityIds: readonly string[],
   metricKeys: readonly string[],
+  currentPayload?: ProbePayload,
 ): Map<string, KomariMetricSeries[]> {
   const result = new Map<string, KomariMetricSeries[]>()
   const systems = payload.systems ?? []
@@ -768,6 +836,7 @@ function collectQueryMetricSeries(
       const index = serverIndexFromUuid(entityId)
       const source = systems.find((item) => serverIndexFromServerId(item.serverId) === index) ?? systems[0]
       const series = metricKeys.map((metricKey) => systemMetricSeriesFromPoints(entityId, metricKey, source.points)).filter((item): item is KomariMetricSeries => item !== undefined)
+      mergeCurrentMetricFallback(series, entityId, metricKeys, currentPayload)
       result.set(entityId, series)
     }
     return result
@@ -777,9 +846,126 @@ function collectQueryMetricSeries(
   if (isSystemMetricSeries(directSeries)) {
     const entityId = targets[0] ?? 'mmwx-0'
     const series = metricKeys.map((metricKey) => directMetricSeriesFromPayload(entityId, metricKey, directSeries)).filter((item): item is KomariMetricSeries => item !== undefined)
+    mergeCurrentMetricFallback(series, entityId, metricKeys, currentPayload)
     result.set(entityId, series)
+    return result
   }
 
+  for (const entityId of targets) {
+    const series: KomariMetricSeries[] = []
+    mergeCurrentMetricFallback(series, entityId, metricKeys, currentPayload)
+    if (series.length > 0) result.set(entityId, series)
+  }
+
+  return result
+}
+
+function mergeCurrentMetricFallback(series: KomariMetricSeries[], entityId: string, metricKeys: readonly string[], currentPayload?: ProbePayload): void {
+  const server = currentPayload?.servers[serverIndexFromUuid(entityId)]
+  if (!server) return
+  for (const metricKey of metricKeys) {
+    const index = series.findIndex((item) => item.metric_key === metricKey && item.entity_id === entityId)
+    if (index >= 0 && !isEmptyMetricSeries(series[index])) continue
+    const fallback = currentMetricSeries(entityId, metricKey, server, currentPayload)
+    if (!fallback) continue
+    if (index >= 0) {
+      series[index] = fallback
+    } else {
+      series.push(fallback)
+    }
+  }
+}
+
+function isEmptyMetricSeries(series: KomariMetricSeries | undefined): boolean {
+  if (!series || series.points.length === 0) return true
+  return series.points.every((point) => point.count === 0 || point.value === null)
+}
+
+function currentMetricSeries(entityId: string, metricKey: string, server: ProbeServer, payload: ProbePayload): KomariMetricSeries | undefined {
+  const value = currentMetricValue(server, metricKey)
+  if (value === undefined) return undefined
+  return {
+    metric_key: metricKey,
+    entity_id: entityId,
+    interval_seconds: 300,
+    points: [{
+      time: dateTimeOrUndefined(server.updated_at) ?? dateTimeOrUndefined(payload.updatedAt) ?? new Date().toISOString(),
+      value,
+      count: 1,
+    }],
+  }
+}
+
+function currentMetricValue(server: ProbeServer, metricKey: string): number | undefined {
+  switch (metricKey) {
+    case 'cpu.usage': return firstFinite([server.cpu, server.cpu_pct])
+    case 'memory.used': return firstFinite([server.memory, server.mem_used])
+    case 'memory.total': return numberOrUndefined(server.mem_total)
+    case 'swap.used': return numberOrUndefined(server.swap)
+    case 'swap.total': return numberOrUndefined(server.swap_total)
+    case 'load.average':
+    case 'load.1': return loadAverage(server.load ?? server.loadavg)?.load1
+    case 'load.5': return loadAverage(server.load ?? server.loadavg)?.load5
+    case 'load.15': return loadAverage(server.load ?? server.loadavg)?.load15
+    case 'disk.used': return numberOrUndefined(server.disk_used)
+    case 'disk.total': return numberOrUndefined(server.disk_total)
+    case 'net.in.rate': return firstFinite([server.download, server.download_speed])
+    case 'net.out.rate': return firstFinite([server.upload, server.upload_speed])
+    case 'net.total.up':
+    case 'traffic.up': return firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up])
+    case 'net.total.down':
+    case 'traffic.down': return firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down])
+    case 'process.count': return numberOrUndefined(server.process)
+    case 'connections.tcp': return numberOrUndefined(server.connections)
+    case 'connections.udp': return numberOrUndefined(server.connections_udp)
+    default: return undefined
+  }
+}
+
+function collectPingQueryMetricSeries(
+  history: PingHistory,
+  entityIds: readonly string[],
+  metricKeys: readonly string[],
+  taskIds: readonly number[],
+): KomariMetricSeries[] {
+  const entityFilter = new Set(entityIds)
+  const taskFilter = new Set(taskIds)
+  const groups = new Map<string, PingHistory['records']>()
+
+  for (const record of history.records) {
+    if (entityFilter.size > 0 && !entityFilter.has(record.client)) continue
+    if (taskFilter.size > 0 && !taskFilter.has(record.task_id)) continue
+    const key = `${record.client}:${record.task_id}`
+    const group = groups.get(key) ?? []
+    group.push(record)
+    groups.set(key, group)
+  }
+
+  const result: KomariMetricSeries[] = []
+  for (const [key, records] of groups) {
+    const [entityId, taskId] = key.split(':')
+    const sorted = [...records].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
+    for (const metricKey of metricKeys) {
+      const points = sorted.map((record): KomariMetricPoint => {
+        const value = metricKey === 'ping.loss'
+          ? numberOrUndefined(record.loss)
+          : typeof record.value === 'number' && record.value >= 0 ? record.value : undefined
+        return {
+          time: record.time,
+          value: value ?? null,
+          count: value === undefined ? 0 : 1,
+        }
+      })
+      if (points.length === 0) continue
+      result.push({
+        metric_key: metricKey,
+        entity_id: entityId ?? '',
+        tags: { task_id: taskId ?? '' },
+        interval_seconds: inferIntervalSeconds(points),
+        points,
+      })
+    }
+  }
   return result
 }
 

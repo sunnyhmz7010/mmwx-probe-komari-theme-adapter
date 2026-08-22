@@ -94,6 +94,7 @@ test('serves static assets and SPA fallback safely', async () => {
     assert.match(fallback.body, /fetch\("\/api\/probe"/)
     assert.match(fallback.body, /document\.title=title/)
     assert.match(fallback.body, /link\.href=icon/)
+    assert.doesNotMatch(fallback.body, /text\(d\.logo\)\|\|text\(d\.icon\)/)
   } finally {
     await serverHandle.close()
     await rm(theme.directory, { recursive: true, force: true })

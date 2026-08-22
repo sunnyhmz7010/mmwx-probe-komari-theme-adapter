@@ -147,7 +147,7 @@ export function toPingHistory(servers: ProbeServer[], now: Date): PingHistory {
       const name = bucket.name?.trim() || bucket.label?.trim() || bucket.key?.trim() || `Ping ${tasksByName.size + 1}`
       let task = tasksByName.get(name)
       if (!task) {
-        task = { id: tasksByName.size, name, clients: [], default_on: true, type: 'icmp', interval: 30 }
+        task = { id: tasksByName.size + 1, name, clients: [], default_on: true, type: 'icmp', interval: 30 }
         tasksByName.set(name, task)
       }
       if (!task.clients.includes(client)) task.clients.push(client)
@@ -184,7 +184,7 @@ function toLegacyPingSeriesHistory(pings: readonly ProbePingSeries[]): PingHisto
     const name = series.route?.trim() || `Ping ${tasksByName.size + 1}`
     let task = tasksByName.get(name)
     if (!task) {
-      task = { id: tasksByName.size, name, clients: [], default_on: true, type: 'icmp', interval: 30 }
+      task = { id: tasksByName.size + 1, name, clients: [], default_on: true, type: 'icmp', interval: 30 }
       tasksByName.set(name, task)
     }
     if (!task.clients.includes(client)) task.clients.push(client)
@@ -216,7 +216,7 @@ function toMmwxProbePingHistory(payload: ProbeSeriesPayload, serverIndexValue: n
   const series = payload.all_series ?? (isProbeSeries(payload.series) ? [payload.series] : [])
   const client = `mmwx-${serverIndexValue}`
   const tasks = series.map((item, index): PingTask => ({
-    id: index,
+    id: index + 1,
     name: item.label?.trim() || item.key?.trim() || `Ping ${index + 1}`,
     clients: [client],
     default_on: true,
@@ -225,8 +225,8 @@ function toMmwxProbePingHistory(payload: ProbeSeriesPayload, serverIndexValue: n
   }))
   const maxBuckets = Math.max(0, ...series.map((item) => item.buckets?.length ?? 0))
   const baseTime = generatedAt - (generatedAt % bucketSec)
-  const records = series.flatMap((item, taskId) => (item.buckets ?? []).map((bucket, index) => ({
-    task_id: taskId,
+  const records = series.flatMap((item, taskIndex) => (item.buckets ?? []).map((bucket, index) => ({
+    task_id: taskIndex + 1,
     time: new Date((baseTime - (maxBuckets - 1 - index) * bucketSec) * 1000).toISOString(),
     value: numberOrUndefined(bucket.ms) ?? null,
     loss: numberOrUndefined(bucket.loss) ?? null,

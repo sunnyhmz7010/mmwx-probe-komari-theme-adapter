@@ -199,20 +199,20 @@ test('builds ping tasks and preserves null for unavailable buckets', () => {
 
   assert.equal(history.count, 2)
   assert.deepEqual(history.records[0], {
-    task_id: 0,
+    task_id: 1,
     time: now.toISOString(),
     value: 25,
     client: 'mmwx-0',
   })
   assert.deepEqual(history.records[1], {
-    task_id: 1,
+    task_id: 2,
     time: now.toISOString(),
     value: null,
     client: 'mmwx-0',
   })
   assert.deepEqual(history.tasks, [
-    { id: 0, name: 'Google', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
-    { id: 1, name: 'Cloudflare', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
+    { id: 1, name: 'Google', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
+    { id: 2, name: 'Cloudflare', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
   ])
 })
 
@@ -416,6 +416,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
     fetchProbe: async () => ({
       title: '星穹主控',
       logo: 'https://example.com/logo.png',
+      icon: 'https://example.com/favicon.png',
       appearance: { color_mode: 'dark' },
       servers: [server()],
     } as ProbePayload),
@@ -437,7 +438,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
     record_enabled: true,
     record_preserve_time: 24,
     ping_record_preserve_time: 24,
-    custom_head: '<link rel="icon" href="https://example.com/logo.png"><script>document.title="星穹主控";</script>',
+    custom_head: '<link rel="icon" href="https://example.com/favicon.png"><script>document.title="星穹主控";</script>',
     custom_body: '',
     oauth_enable: false,
     oauth_provider: '',
@@ -447,7 +448,30 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
   })
 })
 
-test('uses theme title fallback and accepts icon alias for browser metadata', async () => {
+test('keeps header logo separate from browser favicon metadata', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      logo: 'https://example.com/logo.svg',
+      servers: [server()],
+    } as ProbePayload),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
+  }, 1000, {
+    repoUrl: 'https://github.com/Tokinx/komari-theme-emerald',
+    ref: 'master',
+    themeTitle: '服务器状态',
+  } as never)
+
+  const probe = await service.getProbePayload()
+  const settings = await service.getPublicSettings()
+
+  assert.equal(probe.title, '服务器状态')
+  assert.equal(probe.logo, 'https://example.com/logo.svg')
+  assert.equal(probe.icon, undefined)
+  assert.equal(settings.sitename, '服务器状态')
+  assert.equal(settings.custom_head, '<script>document.title="服务器状态";</script>')
+})
+
+test('uses only explicit probe icon for browser favicon metadata', async () => {
   const service = new KomariDataService({
     fetchProbe: async () => ({
       icon: 'https://example.com/icon.svg',
@@ -464,8 +488,105 @@ test('uses theme title fallback and accepts icon alias for browser metadata', as
   const settings = await service.getPublicSettings()
 
   assert.equal(probe.title, '服务器状态')
-  assert.equal(probe.logo, 'https://example.com/icon.svg')
+  assert.equal(probe.logo, undefined)
   assert.equal(probe.icon, 'https://example.com/icon.svg')
   assert.equal(settings.sitename, '服务器状态')
   assert.equal(settings.custom_head, '<link rel="icon" href="https://example.com/icon.svg"><script>document.title="服务器状态";</script>')
+})
+
+test('maps ping buckets into Komari metric query series', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server()] }),
+    fetchSeries: async (query: Record<string, unknown>): Promise<ProbeSeriesPayload> => {
+      assert.equal(query.all, '1')
+      return {
+        bucket_sec: 300,
+        generated_at: 1787400000,
+        all_series: [
+          {
+            key: 'google',
+            label: 'Google',
+            buckets: [
+              { ms: 25, loss: 0 },
+              { ms: 30, loss: 2 },
+            ],
+          },
+        ],
+      }
+    },
+  }, 1000)
+
+  const metrics = await service.getQueryMetrics({
+    entity_id: 'mmwx-0',
+    metric_keys: ['ping.latency_ms', 'ping.loss'],
+    hours: 1,
+  })
+
+  assert.deepEqual(metrics.series.map((item) => [item.metric_key, (item as { tags?: Record<string, string> }).tags]), [
+    ['ping.latency_ms', { task_id: '1' }],
+    ['ping.loss', { task_id: '1' }],
+  ])
+  assert.deepEqual(metrics.series[0].points.map((point) => point.value), [25, 30])
+  assert.deepEqual(metrics.series[1].points.map((point) => point.value), [0, 2])
+})
+
+test('uses current probe values as metric fallback when system history omits available fields', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      servers: [server({
+        disk_used: 10,
+        disk_total: 100,
+        process: 22,
+        connections: 9,
+        connections_udp: 3,
+      })],
+    }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({
+      bucket_sec: 300,
+      generated_at: 1787400000,
+      series: {
+        cpu_pct: [{ timestamp: 1787399700, value: 5 }],
+      },
+    }),
+  }, 1000)
+
+  const metrics = await service.getQueryMetrics({
+    entity_id: 'mmwx-0',
+    metric_keys: ['disk.used', 'disk.total', 'process.count', 'connections.tcp', 'connections.udp'],
+    hours: 1,
+  })
+
+  const valueByMetric = Object.fromEntries(metrics.series.map((item) => [item.metric_key, item.points[0]?.value]))
+  assert.deepEqual(valueByMetric, {
+    'disk.used': 10,
+    'disk.total': 100,
+    'process.count': 22,
+    'connections.tcp': 9,
+    'connections.udp': 3,
+  })
+})
+
+test('derives Junimo homepage ping bindings from available public ping tasks', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server()] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({
+      bucket_sec: 300,
+      generated_at: 1787400000,
+      all_series: [{
+        key: 'google',
+        label: 'Google',
+        buckets: [{ ms: 25, loss: 0 }],
+      }],
+    }),
+  }, 1000, {
+    repoUrl: 'https://github.com/vaspike/junimo',
+    ref: 'main',
+  } as never)
+
+  const settings = await service.getPublicSettings()
+
+  assert.deepEqual(settings.theme_settings, {
+    showPingChart: true,
+    homepagePingBindings: { '1': ['mmwx-0'] },
+  })
 })

@@ -15,7 +15,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 }
 
-const HEAD_SYNC_SCRIPT = `<script>(()=>{const text=(v)=>typeof v==="string"?v.trim():"";fetch("/api/probe",{cache:"no-store"}).then((r)=>r.ok?r.json():null).then((d)=>{if(!d)return;const title=text(d.title);if(title)document.title=title;const icon=text(d.logo)||text(d.icon);if(icon){let link=document.querySelector('link[rel~="icon"]');if(!link){link=document.createElement("link");link.rel="icon";document.head.appendChild(link)}link.href=icon}}).catch(()=>{})})();</script>`
+const HEAD_SYNC_SCRIPT = `<script>(()=>{const text=(v)=>typeof v==="string"?v.trim():"";fetch("/api/probe",{cache:"no-store"}).then((r)=>r.ok?r.json():null).then((d)=>{if(!d)return;const title=text(d.title);if(title)document.title=title;const icon=text(d.icon);if(icon){let link=document.querySelector('link[rel~="icon"]');if(!link){link=document.createElement("link");link.rel="icon";document.head.appendChild(link)}link.href=icon}}).catch(()=>{})})();</script>`
 
 interface Candidate {
   filePath: string

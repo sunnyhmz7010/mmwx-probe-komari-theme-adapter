@@ -177,6 +177,7 @@ export interface KomariMetricPoint {
 export interface KomariMetricSeries {
   metric_key: string
   entity_id: string
+  tags?: Record<string, string>
   interval_seconds: number
   points: KomariMetricPoint[]
 }

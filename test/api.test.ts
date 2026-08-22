@@ -309,14 +309,14 @@ test('Komari ping history uses latency and loss points from the MMWX series API'
   assert.deepEqual(history, {
     count: 4,
     records: [
-      { task_id: 0, time: '2026-08-21T11:45:00.000Z', value: 10, loss: 0, client: 'mmwx-0' },
-      { task_id: 1, time: '2026-08-21T11:45:00.000Z', value: 20, loss: 2, client: 'mmwx-0' },
-      { task_id: 0, time: '2026-08-21T11:50:00.000Z', value: 11, loss: 1, client: 'mmwx-0' },
-      { task_id: 1, time: '2026-08-21T11:50:00.000Z', value: null, loss: 100, client: 'mmwx-0' },
+      { task_id: 1, time: '2026-08-21T11:45:00.000Z', value: 10, loss: 0, client: 'mmwx-0' },
+      { task_id: 2, time: '2026-08-21T11:45:00.000Z', value: 20, loss: 2, client: 'mmwx-0' },
+      { task_id: 1, time: '2026-08-21T11:50:00.000Z', value: 11, loss: 1, client: 'mmwx-0' },
+      { task_id: 2, time: '2026-08-21T11:50:00.000Z', value: null, loss: 100, client: 'mmwx-0' },
     ],
     tasks: [
-      { id: 0, name: 'Google', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
-      { id: 1, name: 'Cloudflare', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
+      { id: 1, name: 'Google', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
+      { id: 2, name: 'Cloudflare', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30 },
     ],
     basic_info: { clients: ['mmwx-0'] },
   })
@@ -757,5 +757,61 @@ test('RPC2 supports Junimo metric and common compatibility methods', async () =>
     })
     assert.equal(pingTasks.status, 200)
     assert.equal((pingTasks.body as { result?: Array<{ name?: string }> }).result?.[0]?.name, 'Google')
+  })
+})
+
+test('API routes expose readonly Komari admin compatibility resources', async () => {
+  const node = {
+    uuid: 'mmwx-1',
+    name: 'readonly-node',
+    cpu_name: 'AMD EPYC',
+    virtualization: 'kvm',
+    arch: 'amd64',
+    cpu_cores: 2,
+    cpu_physical_cores: 2,
+    os: 'Debian',
+    kernel_version: '6.1',
+    gpu_name: 'None',
+    region: 'US',
+    mem_total: 1024,
+    swap_total: 0,
+    disk_total: 2048,
+    weight: 0,
+    price: 0,
+    billing_cycle: 30,
+    auto_renewal: false,
+    currency: '$',
+    expired_at: '0001-01-01T00:00:00.000Z',
+    group: '',
+    tags: '',
+    hidden: false,
+    traffic_limit: 0,
+    traffic_limit_type: 'max',
+    created_at: '2026-08-21T00:00:00.000Z',
+    updated_at: '2026-08-21T00:00:00.000Z',
+  }
+
+  await withApi(fakeService({
+    getNodesInformation: async () => [node],
+    getPublicPingTasks: async () => ([{
+      id: 1,
+      name: 'Google',
+      clients: [node.uuid],
+      default_on: true,
+      type: 'icmp',
+      interval: 60,
+      target: 'google.com',
+    }]),
+  }), async (baseUrl) => {
+    const clients = await request(baseUrl, '/api/admin/client/list')
+    assert.equal(clients.status, 200)
+    assert.deepEqual((clients.body as { data?: unknown }).data, [node])
+
+    const ping = await request(baseUrl, '/api/admin/ping')
+    assert.equal(ping.status, 200)
+    assert.equal((ping.body as { data?: Array<{ id?: number }> }).data?.[0]?.id, 1)
+
+    const write = await request(baseUrl, '/api/admin/theme/settings', { method: 'POST', body: '{}' })
+    assert.equal(write.status, 405)
   })
 })

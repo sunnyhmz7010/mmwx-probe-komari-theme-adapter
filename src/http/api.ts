@@ -45,6 +45,16 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
           const snapshot = await service.getSnapshot()
           return json(response, 200, envelope(snapshot.nodes))
         }
+        if (url.pathname === '/api/admin/client/list') {
+          return json(response, 200, envelope(await service.getNodesInformation()))
+        }
+        if (url.pathname === '/api/admin/ping') {
+          return json(response, 200, envelope(await service.getPublicPingTasks(queryFrom(url))))
+        }
+        if (url.pathname === '/api/admin/theme/settings') {
+          const settings = await service.getPublicSettings()
+          return json(response, 200, envelope(settings.theme_settings ?? {}))
+        }
         if (url.pathname === '/api/public') {
           return json(response, 200, envelope(await service.getPublicSettings()))
         }
