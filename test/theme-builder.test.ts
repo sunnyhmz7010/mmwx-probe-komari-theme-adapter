@@ -20,6 +20,45 @@ async function packageFixture(files: Record<string, string>): Promise<string> {
   return repoDir
 }
 
+async function fakeNpmFixture(options: { writeOutputOnBuild: boolean }): Promise<{ binDir: string; restorePath: () => void }> {
+  const binDir = await fixture()
+  const scriptPath = path.join(binDir, 'fake-npm.cjs')
+  const commandPath = path.join(binDir, 'npm.cmd')
+  const script = `
+const fs = require('node:fs')
+const path = require('node:path')
+
+const args = process.argv.slice(2)
+const cwd = process.cwd()
+
+if (args[0] === 'ci') {
+  process.exit(0)
+}
+
+if (args[0] === 'run' && args[1] === 'build') {
+  if (${options.writeOutputOnBuild ? 'true' : 'false'}) {
+    fs.mkdirSync(path.join(cwd, 'dist'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, 'dist', 'index.html'), '<main>theme</main>')
+  }
+  process.stderr.write('type-check failed\\n')
+  process.exit(1)
+}
+
+process.stderr.write(\`unexpected args: \${args.join(' ')}\\n\`)
+process.exit(2)
+`
+  await writeFile(scriptPath, script)
+  await writeFile(commandPath, `@echo off\r\nnode "${scriptPath}" %*\r\n`)
+  const originalPath = process.env.PATH ?? ''
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath}`
+  return {
+    binDir,
+    restorePath() {
+      process.env.PATH = originalPath
+    },
+  }
+}
+
 test('uses the repository root when it already contains index.html', async () => {
   const repoDir = await packageFixture({ 'index.html': '<!doctype html>' })
 
@@ -159,6 +198,54 @@ test('copies only an allowed output directory with index.html', async () => {
   } finally {
     await rm(repoDir, { recursive: true, force: true })
     await rm(outputDir, { recursive: true, force: true })
+  }
+})
+
+test('keeps a generated output directory when the build command exits non-zero', async () => {
+  const repoDir = await packageFixture({
+    'package.json': JSON.stringify({ scripts: { build: 'build' } }),
+    'package-lock.json': '{}',
+    'index.html': '<script type="module" src="/src/main.ts"></script>',
+  })
+  const outputDir = await fixture()
+  const fakeNpm = await fakeNpmFixture({ writeOutputOnBuild: true })
+  const logs: string[] = []
+  const logger = {
+    info(message: string) { logs.push(`info:${message}`) },
+    warn(message: string) { logs.push(`warn:${message}`) },
+    error(message: string) { logs.push(`error:${message}`) },
+  }
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    const result = await buildTheme({ ...plan, packageManager: 'npm' }, repoDir, outputDir, logger)
+    assert.equal(result, outputDir)
+    assert.equal(await readFile(path.join(outputDir, 'index.html'), 'utf8'), '<main>theme</main>')
+    assert.ok(logs.some((line) => line.startsWith('warn:主题构建命令失败，但检测到已生成的产物，继续启动')))
+  } finally {
+    fakeNpm.restorePath()
+    await rm(repoDir, { recursive: true, force: true })
+    await rm(outputDir, { recursive: true, force: true })
+    await rm(fakeNpm.binDir, { recursive: true, force: true })
+  }
+})
+
+test('rejects a failed build command when no output was generated', async () => {
+  const repoDir = await packageFixture({
+    'package.json': JSON.stringify({ scripts: { build: 'build' } }),
+    'package-lock.json': '{}',
+  })
+  const outputDir = await fixture()
+  const fakeNpm = await fakeNpmFixture({ writeOutputOnBuild: false })
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    await assert.rejects(() => buildTheme({ ...plan, packageManager: 'npm' }, repoDir, outputDir), /failed/i)
+  } finally {
+    fakeNpm.restorePath()
+    await rm(repoDir, { recursive: true, force: true })
+    await rm(outputDir, { recursive: true, force: true })
+    await rm(fakeNpm.binDir, { recursive: true, force: true })
   }
 })
 

@@ -270,7 +270,7 @@ docker compose logs -f mmwx-komari-adapter
 - `/api/probe` 返回 `502`：容器无法从主控 `/api/public/probe-servers` 获取服务器状态
 - 页面没有实时更新：检查反向代理、防火墙和主控是否允许 WebSocket；路径为 `/api/stream`
 - `MMWX_ORIGIN must use HTTPS`：生产源站不是 HTTPS。本地调试仅允许 `localhost` 或 `127.0.0.1`
-- 主题构建失败：确认 `THEME_REPO` 可以公开拉取，主题仓库包含根目录静态 `index.html`，或包含 `package.json`、构建脚本和受支持锁文件
+- 主题构建失败：确认 `THEME_REPO` 可以公开拉取，主题仓库包含根目录静态 `index.html`，或包含 `package.json`、构建脚本和受支持锁文件；若构建命令返回非零但已经生成包含 `index.html` 的 `dist`、`build`、`out` 或 `public` 产物，适配器会记录警告并继续启动
 
 ## 🧠 功能细节
 
@@ -278,7 +278,7 @@ docker compose logs -f mmwx-komari-adapter
 - 查询参数透传：`/api/series` 会透传 `hours`、`metric` 等查询参数，但不会允许访客覆盖主控地址
 - 历史数据映射：Komari 的 `/api/records/ping` 和 `/api/records/load` 会把 `uuid=mmwx-0`、`hours=24` 转换为主控需要的 `server=0`、`range=24h`，其中系统指标固定追加 `metric=system`
 - 主题 RPC 映射：`common:getNodes`、`common:getRecords`、`public:queryMetrics`、`public:getPingMetricStats`、`public:getPublicPingTasks` 都会从同一份探针快照和历史序列生成只读结果，避免主题直接依赖主控后台
-- 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
+- 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`；构建命令失败时仅接受已生成的标准输出目录，不会把源码根目录 `index.html` 当作构建产物
 - 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；保存操作必须携带 `ADMIN_TOKEN`
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程

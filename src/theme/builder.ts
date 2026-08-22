@@ -16,7 +16,9 @@ interface SpawnResult {
 
 function spawnFile(file: string, args: readonly string[], options: { cwd: string; env: NodeJS.ProcessEnv }, logger: Logger, phase: string): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(file, [...args], {
+    const command = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : file
+    const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', file, ...args] : [...args]
+    const child = spawn(command, commandArgs, {
       cwd: options.cwd,
       env: options.env,
       shell: false,
@@ -178,7 +180,20 @@ export async function buildTheme(plan: BuildPlan, repoDir: string, outputDir: st
     await spawnFile(executable, plan.installArgs, options, logger, '主题依赖安装')
     logger.info('主题依赖安装完成')
     logger.info('主题构建命令开始', { command: `${executable} ${plan.buildArgs.join(' ')}` })
-    await spawnFile(executable, plan.buildArgs, options, logger, '主题构建命令')
+    try {
+      await spawnFile(executable, plan.buildArgs, options, logger, '主题构建命令')
+    } catch (error) {
+      const generatedOutputCandidates = plan.outputCandidates.filter((candidate) => candidate !== '.')
+      try {
+        const generatedOutput = await findOutput(resolvedRepo, generatedOutputCandidates)
+        logger.warn('主题构建命令失败，但检测到已生成的产物，继续启动', {
+          output: generatedOutput,
+          reason: error instanceof Error ? error.message : 'unknown error',
+        })
+      } catch {
+        throw error
+      }
+    }
     logger.info('主题构建命令完成')
   } else {
     logger.info('主题构建跳过依赖安装和构建命令')
