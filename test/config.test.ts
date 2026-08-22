@@ -61,6 +61,9 @@ test('loads defaults and normalizes the origin', () => {
     port: 8080,
     cacheTtlMs: 5000,
     dataDir: '/data',
+    adminToken: undefined,
+    themeSettingsFile: '/data/theme-settings.json',
+    themeSettingsJson: undefined,
   })
 })
 
@@ -72,6 +75,9 @@ test('describes the complete startup configuration without exposing the probe to
     PORT: '9090',
     CACHE_TTL: '12',
     DATA_DIR: './runtime-data',
+    ADMIN_TOKEN: 'admin-secret',
+    THEME_SETTINGS_FILE: './runtime-data/custom-theme-settings.json',
+    THEME_SETTINGS_JSON: '{"showNotice":true}',
   })
 
   const summary = describeConfig(config)
@@ -83,7 +89,11 @@ test('describes the complete startup configuration without exposing the probe to
   assert.match(summary, /PORT=9090/)
   assert.match(summary, /CACHE_TTL=12s/)
   assert.match(summary, /DATA_DIR=.*runtime-data/)
+  assert.match(summary, /ADMIN_TOKEN=\[REDACTED\]/)
+  assert.match(summary, /THEME_SETTINGS_FILE=.*custom-theme-settings\.json/)
+  assert.match(summary, /THEME_SETTINGS_JSON=\[SET\]/)
   assert.equal(summary.includes(validEnv.PROBE_TOKEN), false)
+  assert.equal(summary.includes('admin-secret'), false)
 })
 
 test('accepts overrides and resolves DATA_DIR', () => {
@@ -101,6 +111,33 @@ test('accepts overrides and resolves DATA_DIR', () => {
   assert.equal(config.port, 9090)
   assert.equal(config.cacheTtlMs, 12000)
   assert.match(config.dataDir, /runtime-data$/)
+  assert.equal(config.adminToken, undefined)
+  assert.match(config.themeSettingsFile, /runtime-data[\\/]theme-settings\.json$/)
+  assert.equal(config.themeSettingsJson, undefined)
+})
+
+test('accepts admin token and theme settings overrides', () => {
+  const config = loadConfig({
+    ...validEnv,
+    DATA_DIR: './runtime-data',
+    ADMIN_TOKEN: 'admin-secret',
+    THEME_SETTINGS_FILE: './runtime-data/theme.json',
+    THEME_SETTINGS_JSON: '{"showNotice":true,"defaultViewMode":"list"}',
+  })
+
+  assert.equal(config.adminToken, 'admin-secret')
+  assert.match(config.themeSettingsFile, /runtime-data[\\/]theme\.json$/)
+  assert.deepEqual(config.themeSettingsJson, { showNotice: true, defaultViewMode: 'list' })
+})
+
+test('rejects malformed THEME_SETTINGS_JSON without exposing secrets', () => {
+  assert.throws(
+    () => loadConfig({ ...validEnv, PROBE_TOKEN: 'secret-token', ADMIN_TOKEN: 'admin-secret', THEME_SETTINGS_JSON: '[]' }),
+    (error: unknown) => isConfigError(error)
+      && /THEME_SETTINGS_JSON.*object/.test(error.message)
+      && !error.message.includes('secret-token')
+      && !error.message.includes('admin-secret'),
+  )
 })
 
 test('rejects malformed integer configuration', () => {

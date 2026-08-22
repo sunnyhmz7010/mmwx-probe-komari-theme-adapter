@@ -37,7 +37,7 @@ docker build -t mmwx-komari-adapter .  # 构建本地镜像
 - 配置解析集中在 `src/config.ts`，校验失败抛出 `ConfigError`
 - `PROBE_TOKEN` 只能用于 MMWX 上游请求和日志脱敏，不得暴露给主题构建、静态资源或 API 响应
 - 生产环境 `MMWX_ORIGIN` 必须使用 HTTPS；仅 localhost 和 127.0.0.1 允许 HTTP
-- Komari 兼容层保持只读，拒绝登录、管理、主题管理和节点修改类接口
+- Komari 兼容层默认只读，拒绝登录、完整后台管理和节点修改类接口；仅允许配置 `ADMIN_TOKEN` 后写入本项目自己的主题配置文件 `/data/theme-settings.json`
 - 主题构建产物必须经过路径包含性、符号链接逃逸和 `index.html` 校验后再发布到运行目录
 - 新增接口兼容能力时，必须同步补测试和 README 的兼容边界说明
 
@@ -53,6 +53,7 @@ src/http/api.ts      ← Komari 兼容 API 与 RPC2 路由
 src/http/server.ts   ← HTTP server 与 WebSocket 路由
 src/http/static.ts   ← 静态主题资源和 SPA fallback
 src/theme/loader.ts  ← 主题仓库克隆、构建、校验和发布
+src/theme/settings-store.ts ← 主题配置 JSON 文件读写与校验
 ```
 
 ## 环境变量完整列表
@@ -67,3 +68,6 @@ src/theme/loader.ts  ← 主题仓库克隆、构建、校验和发布
 | `PORT` | 否 | `8080` | HTTP 监听端口 |
 | `CACHE_TTL` | 否 | `5` | 探针数据缓存时间，单位秒 |
 | `DATA_DIR` | 否 | `/data` | 主题构建产物和运行数据目录 |
+| `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用写入 |
+| `THEME_SETTINGS_FILE` | 否 | `/data/theme-settings.json` | 主题配置持久化 JSON 文件路径 |
+| `THEME_SETTINGS_JSON` | 否 | - | 主题配置 JSON 对象，优先级高于文件配置 |

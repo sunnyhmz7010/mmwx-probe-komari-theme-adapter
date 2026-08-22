@@ -15,23 +15,26 @@ async function tempRepo(files: Record<string, string>): Promise<string> {
 }
 
 test('reads Komari theme settings defaults from komari-theme.json', async () => {
+  const manifest = {
+    short: 'Glassmorphism',
+    configuration: {
+      type: 'managed',
+      data: [
+        { key: 'layout', type: 'select', options: [{ label: 'Paper', value: 'paper' }, { label: 'Glass', value: 'glass' }] },
+        { key: 'show_banner', type: 'switch' },
+        { key: 'accent', default: 'blue' },
+      ],
+    },
+  }
   const repoDir = await tempRepo({
-    'komari-theme.json': JSON.stringify({
-      short: 'Glassmorphism',
-      configuration: {
-        data: [
-          { key: 'layout', type: 'select', options: [{ label: 'Paper', value: 'paper' }, { label: 'Glass', value: 'glass' }] },
-          { key: 'show_banner', type: 'switch' },
-          { key: 'accent', default: 'blue' },
-        ],
-      },
-    }),
+    'komari-theme.json': JSON.stringify(manifest),
   })
 
   try {
     await assert.doesNotReject(() => readThemeMetadata(repoDir))
     await assert.deepEqual(await readThemeMetadata(repoDir), {
       short: 'Glassmorphism',
+      manifest,
       themeSettings: {
         layout: 'paper',
         show_banner: false,

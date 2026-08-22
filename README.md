@@ -21,6 +21,7 @@
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
 - Komari 公开只读兼容层：基于标准探针数据转换出常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
+- 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin/settings/theme` 轻量配置页，并将配置保存到 `/data/theme-settings.json`
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
 - 只读安全边界：`PROBE_TOKEN` 仅用于容器访问已配置主控，不暴露给浏览器，不提供登录、管理、写入或节点修改能力
@@ -55,6 +56,8 @@ services:
       - THEME_REF=main
       - PORT=8080
       - CACHE_TTL=5
+      # 可选：启用 /admin/settings/theme 写入保存
+      # - ADMIN_TOKEN=replace-with-random-admin-token
     volumes:
       - theme-data:/data
 
@@ -195,6 +198,36 @@ docker run -d \
 
 登录、后台管理、主题管理、节点修改等写操作不在兼容范围内。
 
+### 🎨 主题配置
+
+容器会读取当前主题仓库根目录的 `komari-theme.json`。如果主题声明了 `configuration`，可以打开：
+
+```text
+http://localhost:8080/admin/settings/theme
+```
+
+页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
+
+配置保存位置默认是：
+
+```text
+/data/theme-settings.json
+```
+
+最终返回给主题的 `theme_settings` 合并顺序为：
+
+```text
+主题默认值 < theme-settings.json < THEME_SETTINGS_JSON < 适配器自动兼容补丁
+```
+
+同时兼容 Komari 后台读取主题配置声明的路径：
+
+```text
+/themes/<当前主题>/komari-theme.json
+```
+
+没有 `configuration` 的主题会显示“当前主题未声明可配置项”，并提供高级 JSON 编辑入口。
+
 ### 📋 环境变量
 
 | 变量 | 必填 | 默认值 | 说明 |
@@ -207,6 +240,9 @@ docker run -d \
 | `PORT` | 否 | `8080` | 容器内 HTTP 监听端口 |
 | `CACHE_TTL` | 否 | `5` | MMWX 探针数据缓存时间，单位秒 |
 | `DATA_DIR` | 否 | `/data` | 主题构建产物和运行数据目录，容器部署时建议挂载持久化卷 |
+| `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用主题配置写入 |
+| `THEME_SETTINGS_FILE` | 否 | `/data/theme-settings.json` | 主题配置持久化 JSON 文件路径 |
+| `THEME_SETTINGS_JSON` | 否 | - | 主题配置 JSON 对象，会覆盖文件配置，适合 Docker 环境强制指定少量设置 |
 
 ### 📜 日志与数据持久化
 
@@ -223,7 +259,7 @@ docker compose logs --tail=200 mmwx-komari-adapter
 docker compose logs -f mmwx-komari-adapter
 ```
 
-容器内 `/data` 用于保存当前构建完成的主题目录。建议始终挂载 Docker volume，避免容器重建后重复拉取和构建主题。
+容器内 `/data` 用于保存当前构建完成的主题目录和 `theme-settings.json`。建议始终挂载 Docker volume，避免容器重建后重复拉取、构建主题或丢失主题配置。
 
 ### 🧯 故障排查
 
@@ -243,6 +279,7 @@ docker compose logs -f mmwx-komari-adapter
 - 历史数据映射：Komari 的 `/api/records/ping` 和 `/api/records/load` 会把 `uuid=mmwx-0`、`hours=24` 转换为主控需要的 `server=0`、`range=24h`，其中系统指标固定追加 `metric=system`
 - 主题 RPC 映射：`common:getNodes`、`common:getRecords`、`public:queryMetrics`、`public:getPingMetricStats`、`public:getPublicPingTasks` 都会从同一份探针快照和历史序列生成只读结果，避免主题直接依赖主控后台
 - 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
+- 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；保存操作必须携带 `ADMIN_TOKEN`
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程
 - 输出校验：构建产物必须包含 `index.html`，并通过路径包含性和符号链接检查防止目录逃逸

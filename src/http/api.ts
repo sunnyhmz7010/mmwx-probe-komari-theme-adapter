@@ -7,6 +7,10 @@ export interface ApiRouter {
   handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>
 }
 
+export interface ApiRouterOptions {
+  adminToken?: string
+}
+
 type Query = Record<string, string>
 
 interface JsonRpcRequest {
@@ -22,7 +26,7 @@ const JSON_HEADERS = {
   'Cache-Control': 'no-store',
 }
 
-export function createApiRouter(service: KomariDataService): ApiRouter {
+export function createApiRouter(service: KomariDataService, options: ApiRouterOptions = {}): ApiRouter {
   return {
     async handle(request, response) {
       const url = new URL(request.url ?? '/', 'http://adapter.local')
@@ -32,6 +36,13 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
         if (url.pathname === '/api/rpc2') {
           if (request.method !== 'POST') return methodNotAllowed(response)
           return await handleRpc2(service, request, response)
+        }
+
+        if (url.pathname === '/api/admin/theme/settings' && request.method === 'POST') {
+          if (!options.adminToken) return json(response, 403, envelope(null, 'admin theme settings are disabled', 'error'))
+          if (!hasAdminToken(request, options.adminToken)) return json(response, 401, envelope(null, 'unauthorized', 'error'))
+          const body = await readJsonObject(request)
+          return json(response, 200, envelope(await service.updateThemeSettings(body)))
         }
 
         if (request.method !== 'GET') return methodNotAllowed(response)
@@ -52,8 +63,7 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
           return json(response, 200, envelope(await service.getPublicPingTasks(queryFrom(url))))
         }
         if (url.pathname === '/api/admin/theme/settings') {
-          const settings = await service.getPublicSettings()
-          return json(response, 200, envelope(settings.theme_settings ?? {}))
+          return json(response, 200, envelope(await service.getThemeSettings()))
         }
         if (url.pathname === '/api/public') {
           return json(response, 200, envelope(await service.getPublicSettings()))
@@ -78,6 +88,26 @@ export function createApiRouter(service: KomariDataService): ApiRouter {
       }
     },
   }
+}
+
+function hasAdminToken(request: IncomingMessage, expected: string): boolean {
+  const header = request.headers.authorization
+  if (typeof header !== 'string') return false
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match?.[1] === expected
+}
+
+async function readJsonObject(request: IncomingMessage): Promise<Record<string, unknown>> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await readBody(request))
+  } catch {
+    throw Object.assign(new Error('request body must be valid JSON'), { statusCode: 400 })
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw Object.assign(new Error('request body must be a JSON object'), { statusCode: 400 })
+  }
+  return parsed as Record<string, unknown>
 }
 
 function envelope(data: unknown, message = 'success', status = 'success'): { status: string; message: string; data: unknown } {

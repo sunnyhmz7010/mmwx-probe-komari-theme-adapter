@@ -1,5 +1,7 @@
 import path from 'node:path'
 
+import { parseThemeSettingsJson, type ThemeSettings } from './theme/settings-store.js'
+
 export interface AppConfig {
   mmwxOrigin: string
   probeToken: string
@@ -9,6 +11,9 @@ export interface AppConfig {
   port: number
   cacheTtlMs: number
   dataDir: string
+  adminToken?: string
+  themeSettingsFile: string
+  themeSettingsJson?: ThemeSettings
 }
 
 export function describeConfig(config: AppConfig): string {
@@ -21,6 +26,9 @@ export function describeConfig(config: AppConfig): string {
     `PORT=${config.port}`,
     `CACHE_TTL=${config.cacheTtlMs / 1000}s`,
     `DATA_DIR=${config.dataDir}`,
+    `ADMIN_TOKEN=${config.adminToken ? '[REDACTED]' : 'disabled'}`,
+    `THEME_SETTINGS_FILE=${config.themeSettingsFile}`,
+    `THEME_SETTINGS_JSON=${config.themeSettingsJson ? '[SET]' : 'unset'}`,
   ].join(' ')
 }
 
@@ -110,6 +118,19 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   }
   const configuredDataDir = env.DATA_DIR?.trim()
   const dataDir = configuredDataDir ? path.resolve(configuredDataDir) : '/data'
+  const themeSettingsFileRaw = env.THEME_SETTINGS_FILE?.trim()
+  const themeSettingsFile = themeSettingsFileRaw
+    ? path.resolve(themeSettingsFileRaw)
+    : `${dataDir.replace(/[\\/]$/, '').replaceAll('\\', '/')}/theme-settings.json`
+  const themeSettingsJsonRaw = env.THEME_SETTINGS_JSON?.trim()
+  let themeSettingsJson: ThemeSettings | undefined
+  if (themeSettingsJsonRaw) {
+    try {
+      themeSettingsJson = parseThemeSettingsJson(themeSettingsJsonRaw, 'THEME_SETTINGS_JSON')
+    } catch (error) {
+      throw new ConfigError(error instanceof Error ? error.message : 'THEME_SETTINGS_JSON must be valid JSON')
+    }
+  }
   return {
     mmwxOrigin,
     probeToken,
@@ -119,5 +140,8 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     port,
     cacheTtlMs,
     dataDir,
+    adminToken: env.ADMIN_TOKEN?.trim() || undefined,
+    themeSettingsFile,
+    themeSettingsJson,
   }
 }
