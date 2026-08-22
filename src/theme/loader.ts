@@ -10,6 +10,7 @@ import type { LoadedTheme, ThemeSource } from './types.js'
 interface ThemeManifest {
   short?: unknown
   configuration?: unknown
+  [key: string]: unknown
 }
 
 interface ThemeConfigurationItem {
@@ -94,10 +95,19 @@ async function readThemeManifest(repoDir: string): Promise<ThemeManifest | null>
   }
 }
 
-export async function readThemeMetadata(repoDir: string): Promise<{ short?: string; themeSettings: Record<string, unknown> | null }> {
+function themeConfigurationSummary(manifest: ThemeManifest | null): { configuration: string; fields: number } {
+  const configuration = isRecord(manifest?.configuration) ? manifest.configuration : undefined
+  if (!configuration) return { configuration: 'none', fields: 0 }
+  const type = stringOrUndefined(configuration.type)?.toLowerCase() || 'managed'
+  const data = configuration.data
+  return { configuration: type, fields: Array.isArray(data) ? data.length : isRecord(data) ? Object.keys(data).length : 0 }
+}
+
+export async function readThemeMetadata(repoDir: string): Promise<{ short?: string; manifest: Record<string, unknown> | null; themeSettings: Record<string, unknown> | null }> {
   const manifest = await readThemeManifest(repoDir)
   return {
     short: stringOrUndefined(manifest?.short),
+    manifest,
     themeSettings: manifestThemeSettings(manifest),
   }
 }
@@ -115,6 +125,10 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
     logger.info('主题加载开始', { repository: source.repoUrl, ref: source.ref, dataDir: config.dataDir })
     await acquireTheme(source, repoDir, logger)
     const metadata = await readThemeMetadata(repoDir)
+    logger.info('主题配置声明已读取', {
+      short: metadata.short || 'unknown',
+      ...themeConfigurationSummary(metadata.manifest),
+    })
     const plan = await detectBuildPlan(repoDir)
     logger.info('主题构建计划已确定', {
       packageManager: plan.packageManager,
@@ -140,6 +154,7 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
       indexPath: path.join(currentDir, 'index.html'),
       title,
       short: metadata.short,
+      manifest: metadata.manifest,
       themeSettings: metadata.themeSettings,
       source,
     }

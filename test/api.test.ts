@@ -79,8 +79,8 @@ function fakeService(overrides: Record<string, unknown> = {}): KomariDataService
   } as unknown as KomariDataService
 }
 
-async function withApi(service: KomariDataService, run: (baseUrl: string) => Promise<void>): Promise<void> {
-  const router = createApiRouter(service)
+async function withApi(service: KomariDataService, run: (baseUrl: string) => Promise<void>, options: Parameters<typeof createApiRouter>[1] = {}): Promise<void> {
+  const router = createApiRouter(service, options)
   const server = http.createServer((request, response) => {
     router.handle(request, response).then((handled: boolean) => {
       if (!handled && !response.headersSent) {
@@ -812,6 +812,38 @@ test('API routes expose readonly Komari admin compatibility resources', async ()
     assert.equal((ping.body as { data?: Array<{ id?: number }> }).data?.[0]?.id, 1)
 
     const write = await request(baseUrl, '/api/admin/theme/settings', { method: 'POST', body: '{}' })
-    assert.equal(write.status, 405)
+    assert.equal(write.status, 403)
   })
+})
+
+test('API routes save theme settings only with the admin token', async () => {
+  const saved: unknown[] = []
+  await withApi(fakeService({
+    updateThemeSettings: async (settings: Record<string, unknown>) => {
+      saved.push(settings)
+      return { ...settings, saved: true }
+    },
+  }), async (baseUrl) => {
+    const missing = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      body: JSON.stringify({ showNotice: true }),
+    })
+    assert.equal(missing.status, 401)
+
+    const wrong = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer wrong' },
+      body: JSON.stringify({ showNotice: true }),
+    })
+    assert.equal(wrong.status, 401)
+
+    const savedResp = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-secret', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showNotice: true }),
+    })
+    assert.equal(savedResp.status, 200)
+    assert.deepEqual(savedResp.body, { status: 'success', message: 'success', data: { showNotice: true, saved: true } })
+    assert.deepEqual(saved, [{ showNotice: true }])
+  }, { adminToken: 'admin-secret' })
 })

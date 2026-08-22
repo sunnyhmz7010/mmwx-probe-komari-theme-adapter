@@ -29,6 +29,7 @@ const baseConfig: AppConfig = {
   port: 0,
   cacheTtlMs: 1000,
   dataDir: '/data',
+  themeSettingsFile: '/data/theme-settings.json',
 }
 
 async function fixture(name: string): Promise<Fixture> {

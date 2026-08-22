@@ -17,6 +17,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     port: 8080,
     cacheTtlMs: 5000,
     dataDir: '/data',
+    themeSettingsFile: '/data/theme-settings.json',
     ...overrides,
   }
 }

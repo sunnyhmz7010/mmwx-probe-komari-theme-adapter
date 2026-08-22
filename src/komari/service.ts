@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 import type { MmwxMetricPoint, MmwxProbeSeries, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbeLicenseBadge, ProbePayload, ProbePingSeries, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
+import type { FileThemeSettingsStore, ThemeSettings } from '../theme/settings-store.js'
 import {
   toKomariLoadRecords,
   toKomariNode,
@@ -44,6 +45,9 @@ interface ThemeSource {
   themeTitle?: string
   themeShort?: string
   themeSettings?: Record<string, unknown> | null
+  themeSettingsOverrides?: ThemeSettings
+  themeSettingsStore?: FileThemeSettingsStore
+  themeManifest?: Record<string, unknown> | null
 }
 
 interface CacheEntry<T> {
@@ -601,7 +605,11 @@ export class KomariDataService {
   }
 
   private async resolveThemeSettings(): Promise<Record<string, unknown>> {
-    const base = this.themeSource?.themeSettings ?? {}
+    const base = {
+      ...(this.themeSource?.themeSettings ?? {}),
+      ...(await this.readStoredThemeSettings()),
+      ...(this.themeSource?.themeSettingsOverrides ?? {}),
+    }
     if (!isJunimoTheme(this.themeSource)) return base
     if (base.homepagePingBindings !== undefined) return base
 
@@ -619,6 +627,21 @@ export class KomariDataService {
     } catch {
       return base
     }
+  }
+
+  public async getThemeSettings(): Promise<Record<string, unknown>> {
+    return await this.resolveThemeSettings()
+  }
+
+  public async updateThemeSettings(settings: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (!this.themeSource?.themeSettingsStore) throw Object.assign(new Error('theme settings store is not configured'), { statusCode: 403 })
+    await this.themeSource.themeSettingsStore.write(settings)
+    return await this.resolveThemeSettings()
+  }
+
+  private async readStoredThemeSettings(): Promise<Record<string, unknown>> {
+    if (!this.themeSource?.themeSettingsStore) return {}
+    return await this.themeSource.themeSettingsStore.read()
   }
 
   private async getSnapshotValue(): Promise<SnapshotValue> {

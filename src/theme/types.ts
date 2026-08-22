@@ -17,6 +17,7 @@ export interface LoadedTheme {
   indexPath: string
   title?: string
   short?: string
+  manifest?: Record<string, unknown> | null
   themeSettings?: Record<string, unknown> | null
   source: ThemeSource
 }

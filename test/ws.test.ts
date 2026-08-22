@@ -23,6 +23,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     port: 0,
     cacheTtlMs: 5000,
     dataDir: '/data',
+    themeSettingsFile: '/data/theme-settings.json',
     ...overrides,
   }
 }
@@ -47,6 +48,17 @@ async function tempTheme(): Promise<LoadedTheme> {
     directory: dir,
     indexPath: path.join(dir, 'index.html'),
     title: '服务器状态',
+    short: 'Emerald',
+    manifest: {
+      short: 'Emerald',
+      configuration: {
+        type: 'managed',
+        data: [
+          { key: 'showNotice', type: 'switch', default: false },
+          { key: 'defaultViewMode', type: 'select', options: 'card,list', default: 'card' },
+        ],
+      },
+    },
     source: { repoUrl: 'https://github.com/acme/theme', ref: 'main' },
   }
 }
@@ -95,6 +107,17 @@ test('serves static assets and SPA fallback safely', async () => {
     assert.match(fallback.body, /document\.title=title/)
     assert.match(fallback.body, /link\.href=icon/)
     assert.doesNotMatch(fallback.body, /text\(d\.logo\)\|\|text\(d\.icon\)/)
+
+    const manifest = await httpGet(baseUrl, '/themes/Emerald/komari-theme.json')
+    assert.equal(manifest.status, 200)
+    assert.match(manifest.contentType ?? '', /application\/json/)
+    assert.deepEqual(JSON.parse(manifest.body), theme.manifest)
+
+    const admin = await httpGet(baseUrl, '/admin/settings/theme')
+    assert.equal(admin.status, 200)
+    assert.match(admin.contentType ?? '', /html/)
+    assert.match(admin.body, /MMWX Komari Theme Settings/)
+    assert.match(admin.body, /\/api\/admin\/theme\/settings/)
   } finally {
     await serverHandle.close()
     await rm(theme.directory, { recursive: true, force: true })

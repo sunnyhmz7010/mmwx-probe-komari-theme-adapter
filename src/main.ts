@@ -5,6 +5,7 @@ import { createHttpServer, type ServerHandle } from './http/server.js'
 import { KomariDataService } from './komari/service.js'
 import { createLogger, logError, logInfo } from './log.js'
 import { loadTheme } from './theme/loader.js'
+import { FileThemeSettingsStore } from './theme/settings-store.js'
 
 export async function start(): Promise<ServerHandle> {
   const config = loadConfig(process.env)
@@ -12,13 +13,17 @@ export async function start(): Promise<ServerHandle> {
   logger.info(`启动配置：${describeConfig(config)}`)
   const theme = await loadTheme(config, logger)
   const mmwx = new MmwxClient(config)
+  const themeSettingsStore = new FileThemeSettingsStore(config.themeSettingsFile)
   const service = new KomariDataService(mmwx, config.cacheTtlMs, {
     ...theme.source,
     themeTitle: theme.title,
     themeShort: theme.short,
     themeSettings: theme.themeSettings,
+    themeSettingsOverrides: config.themeSettingsJson,
+    themeSettingsStore,
+    themeManifest: theme.manifest,
   })
-  const api = createApiRouter(service)
+  const api = createApiRouter(service, { adminToken: config.adminToken })
   const server = createHttpServer(config, theme, api, mmwx)
   await server.listen()
   return server
