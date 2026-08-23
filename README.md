@@ -177,19 +177,16 @@ docker run -d \
 http://localhost:8080/admin/settings/theme
 ```
 
-页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
-
-没有 `configuration` 的主题会显示“当前主题未声明可配置项”。
+页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。没有 `configuration` 的主题会显示“当前主题未声明可配置项”。
 
 ### 🧪 已实测主题仓库
 
 | 主题仓库 | 页面显示 | 数据兼容性 | 主题配置 |
 | --- | --- | --- | --- |
-| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | 待实测 | 待实测 | 待实测（仓库声明有配置项） |
+| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | ✅ | 大部分数据无法显示 | ❌ 有配置项，未兼容 |
+| `https://github.com/Tokinx/komari-theme-emerald` | ✅ | ✅ 全部支持 | ✅ 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | ✅ | ✅ 全部支持 | — 主题本身无配置项 |
 | `https://github.com/vaspike/junimo` | ✅ | ❌ 不支持 Swap | — 主题本身无配置项 |
-
-主题配置状态说明：`✅ 有配置项，已兼容`；`❌ 有配置项，未兼容`；`— 主题本身无配置项`。
 
 ### 📋 环境变量
 
