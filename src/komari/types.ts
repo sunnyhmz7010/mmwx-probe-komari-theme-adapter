@@ -38,15 +38,15 @@ export interface KomariNodeStatus {
   client: string
   time: string
   cpu: number
-  gpu: number
+  gpu?: number
   ram: number
   ram_total: number
-  swap: number
-  swap_total: number
+  swap?: number
+  swap_total?: number
   load: number
   load5: number
   load15: number
-  temp: number
+  temp?: number
   disk: number
   disk_total: number
   net_in: number
@@ -55,9 +55,9 @@ export interface KomariNodeStatus {
   net_total_down: number
   net_total_out?: number
   net_total_down_alt?: number
-  process: number
-  connections: number
-  connections_udp: number
+  process?: number
+  connections?: number
+  connections_udp?: number
   online: boolean
   uptime: number
 }
@@ -106,13 +106,13 @@ export interface KomariLoadRecord {
   client: string
   time: string
   cpu: number
-  gpu: number
+  gpu?: number
   ram: number
   ram_total: number
-  swap: number
-  swap_total: number
+  swap?: number
+  swap_total?: number
   load: number
-  temp: number
+  temp?: number
   disk: number
   disk_total: number
   net_in: number
@@ -121,9 +121,9 @@ export interface KomariLoadRecord {
   net_total_down: number
   traffic_up?: number
   traffic_down?: number
-  process: number
-  connections: number
-  connections_udp: number
+  process?: number
+  connections?: number
+  connections_udp?: number
 }
 
 export interface KomariLoadRecords {

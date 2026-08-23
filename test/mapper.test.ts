@@ -148,7 +148,7 @@ test('maps public node fallback fields and traffic mode aliases', () => {
 
   assert.equal(node.cpu_name, 'AMD EPYC 7B13')
   assert.equal(node.kernel_version, '6.1.0-34-amd64')
-  assert.equal(node.gpu_name, 'None')
+  assert.equal(node.gpu_name, 'unknown')
   assert.equal(node.virtualization, 'unknown')
   assert.equal(node.expired_at, '2026-09-21T00:00:00.000Z')
   assert.equal(node.traffic_limit_type, 'sum')
@@ -165,7 +165,7 @@ test('maps MMWX renewal fields into Komari price, currency and billing cycle', (
   })
 
   assert.equal(node.price, 53.29)
-  assert.equal(node.currency, 'CAD')
+  assert.equal(node.currency, 'C$')
   assert.equal(node.billing_cycle, 90)
 })
 
@@ -180,7 +180,7 @@ test('falls back to CNY price and year cycle when MMWX omits currency', () => {
   })
 
   assert.equal(node.price, 119)
-  assert.equal(node.currency, 'CNY')
+  assert.equal(node.currency, '¥')
   assert.equal(node.billing_cycle, 365)
 })
 

@@ -367,7 +367,7 @@ export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): Ko
     cpu_physical_cores: numberOrUndefined(server.cpu_physical_cores) ?? 1,
     os: stringOrDefault(server.os, 'Linux'),
     kernel_version: stringOrDefault(server.kernel_version ?? server.kernel, 'unknown'),
-    gpu_name: stringOrDefault(server.gpu_name, 'None'),
+    gpu_name: stringOrDefault(server.gpu_name, 'unknown'),
     region: regionLabel(server),
     mem_total: numberOrUndefined(server.mem_total) ?? 0,
     swap_total: numberOrUndefined(server.swap_total) ?? 0,
@@ -403,12 +403,22 @@ function renewalCycleDays(cycle: unknown): number {
 }
 
 function renewalCurrency(server: ProbeServer): string {
-  const currency = server.currency?.trim()
-  if (currency) return currency
-  const renewal = server.renewal_currency?.trim()
-  if (renewal) return renewal
-  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return 'CNY'
+  const explicit = server.currency?.trim()
+  if (explicit) return explicit
+  if (numberOrUndefined(server.renewal_price) !== undefined) {
+    return currencySymbol(server.renewal_currency)
+  }
+  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return '¥'
   return '$'
+}
+
+function currencySymbol(code: unknown): string {
+  const normalized = typeof code === 'string' ? code.trim().toUpperCase() : ''
+  const symbols: Record<string, string> = {
+    USD: '$', CNY: '¥', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$',
+    HKD: 'HK$', TWD: 'NT$', SGD: 'S$', KRW: '₩', INR: '₹', BRL: 'R$',
+  }
+  return symbols[normalized] ?? (normalized || '$')
 }
 
 function trafficLimitType(server: ProbeServer): string {
@@ -433,15 +443,15 @@ export function toKomariNodeStatus(server: ProbeServer, index: number, now = new
     client: `mmwx-${index}`,
     time: dateTimeOrDefault(server.updated_at, now),
     cpu: firstFinite([server.cpu, server.cpu_pct]) ?? 0,
-    gpu: numberOrUndefined(server.gpu) ?? 0,
+    gpu: numberOrUndefined(server.gpu),
     ram: firstFinite([server.memory, server.mem_used]) ?? 0,
     ram_total: numberOrUndefined(server.mem_total) ?? 0,
-    swap: numberOrUndefined(server.swap) ?? 0,
-    swap_total: numberOrUndefined(server.swap_total) ?? 0,
+    swap: numberOrUndefined(server.swap),
+    swap_total: numberOrUndefined(server.swap_total),
     load: load?.load1 ?? 0,
     load5: load?.load5 ?? 0,
     load15: load?.load15 ?? 0,
-    temp: numberOrUndefined(server.temp) ?? 0,
+    temp: numberOrUndefined(server.temp),
     disk: numberOrUndefined(server.disk_used) ?? 0,
     disk_total: numberOrUndefined(server.disk_total) ?? 0,
     net_in: firstFinite([server.download, server.download_speed]) ?? 0,
@@ -450,9 +460,9 @@ export function toKomariNodeStatus(server: ProbeServer, index: number, now = new
     net_total_down: firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
     net_total_out: firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
     net_total_down_alt: firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
-    process: numberOrUndefined(server.process) ?? 0,
-    connections: numberOrUndefined(server.connections) ?? 0,
-    connections_udp: numberOrUndefined(server.connections_udp) ?? 0,
+    process: numberOrUndefined(server.process),
+    connections: numberOrUndefined(server.connections),
+    connections_udp: numberOrUndefined(server.connections_udp),
     online: server.online !== false,
     uptime: numberOrUndefined(server.uptime) ?? 0,
   }
@@ -468,22 +478,20 @@ function enrichLoadRecord(record: LoadHistoryRecord): KomariLoadRecord {
     client: record.client,
     time: record.time,
     cpu: record.cpu ?? 0,
-    gpu: 0,
     ram: record.ram ?? 0,
     ram_total: record.mem_total ?? 0,
-    swap: record.swap ?? 0,
-    swap_total: record.swap_total ?? 0,
+    swap: record.swap,
+    swap_total: record.swap_total,
     load: record.load ?? 0,
-    temp: 0,
     disk: record.disk ?? 0,
     disk_total: record.disk_total ?? 0,
     net_in: record.net_in ?? 0,
     net_out: record.net_out ?? 0,
     net_total_up: record.net_total_up ?? 0,
     net_total_down: record.net_total_down ?? 0,
-    process: record.process ?? 0,
-    connections: record.connections ?? 0,
-    connections_udp: record.connections_udp ?? 0,
+    process: record.process,
+    connections: record.connections,
+    connections_udp: record.connections_udp,
   }
 }
 
