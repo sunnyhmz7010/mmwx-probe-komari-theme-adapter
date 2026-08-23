@@ -28,7 +28,7 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
 - Komari 公开只读兼容层：基于标准探针数据做结构转换，生成常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
-- 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin/settings/theme` 轻量配置页，并将配置保存到容器内部运行目录
+- 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin` 轻量配置页，并将配置保存到容器内部运行目录
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
 - 主控降载：通过共享流中继维护一条到主控的探针 WebSocket，广播给所有访客并复用最近快照帧，访客数增加不再按比例增加主控连接与实时查询
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
@@ -176,10 +176,10 @@ docker run -d \
 容器会读取当前主题仓库根目录的 `komari-theme.json`。如果主题声明了 `configuration`，可以打开：
 
 ```text
-http://localhost:8080/admin/settings/theme
+http://localhost:8080/admin
 ```
 
-页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。没有 `configuration` 的主题会显示“当前主题未声明可配置项”。
+页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。没有 `configuration` 的主题会显示“当前主题未声明可配置项”。`/admin` 之外的子路径一律返回 404。
 
 ### 🧪 已实测主题仓库
 

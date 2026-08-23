@@ -23,14 +23,9 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
     if (serveHealthcheck(request, response)) return
     if (await api.handle(request, response)) return
     if (serveThemeManifest(theme, request, response)) return
-    if (serveThemeSettingsAdmin(theme, request, response)) return
+    if (serveAdmin(theme, request, response)) return
     if (await serveStatic(theme.directory, request, response)) return
-    response.writeHead(404, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'no-store',
-    })
-    response.end(JSON.stringify({ status: 'error', message: 'not found', data: null }))
+    return jsonNotFound(response)
   })
 
   server.on('upgrade', (request, socket, head) => {
@@ -117,10 +112,24 @@ function serveThemeManifest(theme: LoadedTheme, request: IncomingMessage, respon
   return true
 }
 
-function serveThemeSettingsAdmin(theme: LoadedTheme, request: IncomingMessage, response: ServerResponse): boolean {
+function jsonNotFound(response: ServerResponse): boolean {
+  response.writeHead(404, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  })
+  response.end(JSON.stringify({ status: 'error', message: 'not found', data: null }))
+  return true
+}
+
+function serveAdmin(theme: LoadedTheme, request: IncomingMessage, response: ServerResponse): boolean {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const url = new URL(request.url ?? '/', 'http://adapter.local')
-  if (url.pathname !== '/admin/settings/theme') return false
+  if (url.pathname !== '/admin' && !url.pathname.startsWith('/admin/')) return false
+  // 仅 /admin 及其尾斜杠形式展示设置页，其余 /admin/* 一律拒绝访问。
+  if (url.pathname !== '/admin' && url.pathname !== '/admin/') {
+    return jsonNotFound(response)
+  }
   const html = adminThemeSettingsHtml(theme)
   response.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
@@ -146,6 +155,8 @@ function safeJson(value: unknown): string {
 
 function adminThemeSettingsHtml(theme: LoadedTheme): string {
   const title = htmlEscape(theme.title ?? theme.short ?? 'Komari Theme')
+  const repoUrl = theme.source.repoUrl
+  const repoDisplay = repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\/+$/, '')
   const meta = {
     title: theme.title,
     short: theme.short,
@@ -159,44 +170,83 @@ function adminThemeSettingsHtml(theme: LoadedTheme): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MMWX Probe Komari Theme Adapter Settings</title>
 <style>
-body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:960px;margin:32px auto;padding:0 16px;color:#111827;background:#f9fafb}
-main{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;box-shadow:0 1px 2px #0000000d}
-label{display:block;margin:14px 0 6px;font-weight:600}.field{margin-bottom:14px}input,select,textarea{box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit}input[type=checkbox]{width:auto}
-textarea{min-height:120px}button{padding:10px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}button:disabled{background:#9ca3af}
-pre,.notice{background:#f3f4f6;border-radius:8px;padding:12px;overflow:auto}.muted{color:#6b7280}.error{color:#b91c1c}.ok{color:#047857}
-.empty{font-size:1.5rem;font-weight:700;text-align:center;padding:56px 0;color:#374151}
+:root{--bg:#eef2f7;--card:#fff;--ink:#0f172a;--muted:#64748b;--brand:#2563eb;--brand-2:#1d4ed8;--border:#e2e8f0;--accent:#6366f1}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#eef2f7,#e6ebf3);color:var(--ink);min-height:100vh}
+.wrap{max-width:720px;margin:0 auto;padding:40px 20px 64px}
+header{margin-bottom:24px}
+h1{font-size:24px;font-weight:700;margin:0 0 6px;letter-spacing:-.3px}
+.meta{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font-size:13px;color:var(--muted)}
+.meta b{color:#334155;font-weight:600}
+.meta a{color:var(--brand);text-decoration:none;font-weight:500}
+.meta a:hover{text-decoration:underline}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.04);overflow:hidden}
+.card+.card{margin-top:20px}
+.card-head{padding:14px 22px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card-head .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.fields{padding:4px 22px 14px}
+.field{padding:10px 0;border-bottom:1px solid #f1f5f9}
+.field:last-child{border-bottom:0}
+label{display:block;font-weight:600;font-size:14px;margin-bottom:7px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5}
+h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin:12px 0 4px}
+input[type=text],input[type=number],input[type=password],select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;font:inherit;font-size:14px;background:#fbfcfe;color:var(--ink);transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.15);background:#fff}
+textarea{min-height:110px;resize:vertical}
+.switch{position:relative;display:inline-block;width:46px;height:26px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;inset:0;background:#cbd5e1;border-radius:999px;transition:.2s}
+.slider:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch input:checked+.slider{background:var(--brand)}
+.switch input:checked+.slider:before{transform:translateX(20px)}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.switch-row label{margin:0}
+.actions{padding:16px 22px 20px;text-align:center}
+.actions .field{padding:0;border:0;text-align:left;margin-bottom:14px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 28px;border:0;border-radius:10px;background:var(--brand);color:#fff;font-weight:600;font-size:14px;cursor:pointer;transition:background .15s,transform .05s}
+.btn:hover{background:var(--brand-2)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{background:#9ca3af;cursor:not-allowed}
+.msg{margin:10px 0 0;font-size:13.5px;font-weight:600}
+.msg.ok{color:#059669}.msg.error{color:#dc2626}
+.empty{text-align:center;padding:72px 24px;color:#475569}
+.empty h2{font-size:20px;margin:0;color:#1e293b}
+.empty p{margin:8px 0 0;color:var(--muted);font-size:14px}
 </style>
 </head>
 <body>
-<main>
+<div class="wrap">
+<header>
 <h1>MMWX Probe Komari Theme Adapter Settings</h1>
-<p class="muted">当前主题：${title}</p>
-<p class="muted">仓库：${htmlEscape(theme.source.repoUrl)} @ ${htmlEscape(theme.source.ref)}</p>
-<div id="app" class="notice">加载中...</div>
-</main>
+<div class="meta">
+<span>当前主题：<b>${title}</b></span>
+<span>仓库：<a href="${htmlEscape(repoUrl)}" target="_blank" rel="noreferrer">${htmlEscape(repoDisplay)}</a> @ ${htmlEscape(theme.source.ref)}</span>
+</div>
+</header>
+<div id="app">加载中...</div>
+</div>
 <script id="theme-meta" type="application/json">${safeJson(meta)}</script>
 <script>
 const app=document.getElementById("app");
 const meta=JSON.parse(document.getElementById("theme-meta").textContent);
-const text=(v)=>typeof v==="string"?v:"";
 const html=(v)=>String(v).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c]));
 const label=(v)=>typeof v==="string"?v:v&&typeof v==="object"?(v["zh-CN"]||v.zh||v.en||Object.values(v)[0]||""):"";
 const parseOptions=(v)=>Array.isArray(v)?v:String(v||"").split(",").map((x)=>x.trim()).filter(Boolean);
 async function json(url,init){const r=await fetch(url,init);const d=await r.json().catch(()=>({status:"error",message:"invalid json"}));if(!r.ok)throw new Error(d.message||("HTTP "+r.status));return d.data??d.result??d}
 function fieldValue(settings,f){return settings&&Object.prototype.hasOwnProperty.call(settings,f.key)?settings[f.key]:f.default}
 function renderField(f,settings){
- if(f.type==="title")return '<h2>'+html(label(f.name)||"设置")+'</h2>';
- if(f.type==="textbox")return '<p class="notice">'+html(label(f.name)||label(f.help)||"")+'</p>';
+ if(f.type==="title")return '<h3>'+html(label(f.name)||"设置")+'</h3>';
+ if(f.type==="textbox")return '<p class="hint">'+html(label(f.name)||label(f.help)||"")+'</p>';
  if(!f.key)return "";
  const name=html(label(f.name)||f.key), help=label(f.help);
  const value=fieldValue(settings,f);
  let control="";
- if(f.type==="switch"||f.type==="boolean"){control='<input data-key="'+html(f.key)+'" data-type="switch" type="checkbox" '+(value===true?"checked":"")+'>'}
- else if(f.type==="select"||f.type==="radio"){control='<select data-key="'+html(f.key)+'" data-type="value">'+parseOptions(f.options).map((o)=>{const ov=typeof o==="object"?(o.value??o.key??o.label??o.name):o;return '<option value="'+html(ov)+'" '+(String(value)===String(ov)?"selected":"")+'>'+html(typeof o==="object"?label(o.label??o.name) || ov:o)+'</option>'}).join("")+'</select>'}
- else if(f.type==="number"||f.type==="integer"||f.type==="slider"){control='<input data-key="'+html(f.key)+'" data-type="number" type="number" value="'+html(value??0)+'">'}
- else if(f.type==="richtext"||f.type==="nodes"||f.type==="pingtasks"){control='<textarea data-key="'+html(f.key)+'" data-type="'+(f.type==="richtext"?"value":"json")+'">'+html(f.type==="richtext"?(value??""):JSON.stringify(value??[]))+'</textarea>'}
- else{control='<input data-key="'+html(f.key)+'" data-type="value" value="'+html(value??"")+'">'}
- return '<div class="field"><label>'+name+'</label>'+control+(help?'<p class="muted">'+html(help)+'</p>':"")+'</div>';
+ if(f.type==="switch"||f.type==="boolean"){control='<div class="switch-row"><label>'+name+'</label><label class="switch"><input data-key="'+html(f.key)+'" data-type="switch" type="checkbox" '+(value===true?"checked":"")+'><span class="slider"></span></label></div>'}
+ else if(f.type==="select"||f.type==="radio"){control='<label>'+name+'</label><select data-key="'+html(f.key)+'" data-type="value">'+parseOptions(f.options).map((o)=>{const ov=typeof o==="object"?(o.value??o.key??o.label??o.name):o;return '<option value="'+html(ov)+'" '+(String(value)===String(ov)?"selected":"")+'>'+html(typeof o==="object"?label(o.label??o.name)||ov:o)+'</option>'}).join("")+'</select>'}
+ else if(f.type==="number"||f.type==="integer"||f.type==="slider"){control='<label>'+name+'</label><input data-key="'+html(f.key)+'" data-type="number" type="number" value="'+html(value??0)+'">'}
+ else if(f.type==="richtext"||f.type==="nodes"||f.type==="pingtasks"){control='<label>'+name+'</label><textarea data-key="'+html(f.key)+'" data-type="'+(f.type==="richtext"?"value":"json")+'">'+html(f.type==="richtext"?(value??""):JSON.stringify(value??[]))+'</textarea>'}
+ else{control='<label>'+name+'</label><input data-key="'+html(f.key)+'" data-type="value" value="'+html(value??"")+'">'}
+ return '<div class="field">'+control+(help?'<p class="hint">'+html(help)+'</p>':"")+'</div>';
 }
 function collect(){
  const out={};
@@ -216,15 +266,15 @@ async function boot(){
   const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
   const cfg=manifest&&manifest.configuration;
   const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
-  if(!cfg){app.innerHTML='<p class="empty">当前主题未声明可配置项。</p>';return}
+  if(!cfg){app.innerHTML='<div class="card"><div class="empty"><h2>当前主题未声明可配置项。</h2></div></div>';return}
   const type=String(cfg.type||"managed").toLowerCase();
-  if(type==="redirect"){app.innerHTML='<p>主题配置使用跳转页面：</p><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p>';return}
-  if(type==="raw"){app.innerHTML='<iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:1px solid #ddd;border-radius:8px" srcdoc="'+html(cfg.data||"")+'"></iframe>';return}
+  if(type==="redirect"){app.innerHTML='<div class="card"><div class="empty"><h2>主题配置使用跳转页面</h2><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p></div></div>';return}
+  if(type==="raw"){app.innerHTML='<div class="card"><iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:0;display:block" srcdoc="'+html(cfg.data||"")+'"></iframe></div>';return}
   const fields=Array.isArray(cfg.data)?cfg.data:[];
-  app.innerHTML=fields.map((f)=>renderField(f,settings)).join("")+saveBlock();attachSave();
- }catch(e){app.innerHTML='<p class="error">'+html(e.message||e)+'</p>'}
+  app.innerHTML=saveCard()+'<div class="card"><div class="card-head"><span class="dot"></span>主题配置</div><div class="fields">'+fields.map((f)=>renderField(f,settings)).join("")+'</div></div>';attachSave();
+ }catch(e){app.innerHTML='<div class="card"><div class="empty"><h2>加载失败</h2><p class="msg error">'+html(e.message||e)+'</p></div></div>'}
 }
-function saveBlock(){return '<div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button id="save">保存主题配置</button><p id="msg" class="muted"></p>'}
+function saveCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>保存</div><div class="actions"><div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button class="btn" id="save">保存主题配置</button><p class="msg" id="msg"></p></div></div>'}
 function attachSave(){
  const button=document.getElementById("save");
  if(!button)return;
@@ -233,8 +283,8 @@ function attachSave(){
   try{
    const body=collect();
    await json("/api/admin/theme/settings",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+document.getElementById("admin-token").value},body:JSON.stringify(body)});
-   msg.className="ok";msg.textContent="已保存";
-  }catch(e){msg.className="error";msg.textContent=e.message||e}
+   msg.className="msg ok";msg.textContent="已保存";
+  }catch(e){msg.className="msg error";msg.textContent=e.message||e}
  };
 }
 boot();

@@ -135,11 +135,16 @@ test('serves static assets and SPA fallback safely', async () => {
     assert.match(manifest.contentType ?? '', /application\/json/)
     assert.deepEqual(JSON.parse(manifest.body), theme.manifest)
 
-    const admin = await httpGet(baseUrl, '/admin/settings/theme')
+    const admin = await httpGet(baseUrl, '/admin')
     assert.equal(admin.status, 200)
     assert.match(admin.contentType ?? '', /html/)
     assert.match(admin.body, /MMWX Probe Komari Theme Adapter Settings/)
     assert.match(admin.body, /\/api\/admin\/theme\/settings/)
+
+    const adminSub = await httpGet(baseUrl, '/admin/settings/theme')
+    assert.equal(adminSub.status, 404)
+    const adminOther = await httpGet(baseUrl, '/admin/anything')
+    assert.equal(adminOther.status, 404)
   } finally {
     await serverHandle.close()
     await rm(theme.directory, { recursive: true, force: true })
