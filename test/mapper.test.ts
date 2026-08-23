@@ -154,6 +154,50 @@ test('maps public node fallback fields and traffic mode aliases', () => {
   assert.equal(node.traffic_limit_type, 'sum')
 })
 
+test('maps MMWX renewal fields into Komari price, currency and billing cycle', () => {
+  const [node] = toKomariPublicNodes({
+    servers: [server({
+      renewal_price: '53.29',
+      renewal_cycle: 'quarter',
+      renewal_currency: 'CAD',
+      renewal_price_cny: '259.94',
+    })],
+  })
+
+  assert.equal(node.price, 53.29)
+  assert.equal(node.currency, 'CAD')
+  assert.equal(node.billing_cycle, 90)
+})
+
+test('falls back to CNY price and year cycle when MMWX omits currency', () => {
+  const [node] = toKomariPublicNodes({
+    servers: [server({
+      renewal_price: undefined,
+      renewal_currency: undefined,
+      renewal_price_cny: '119',
+      renewal_cycle: 'year',
+    })],
+  })
+
+  assert.equal(node.price, 119)
+  assert.equal(node.currency, 'CNY')
+  assert.equal(node.billing_cycle, 365)
+})
+
+test('keeps explicit Komari price and currency when present', () => {
+  const [node] = toKomariPublicNodes({
+    servers: [server({
+      price: '9.5',
+      currency: '$',
+      billing_cycle: '30',
+    })],
+  })
+
+  assert.equal(node.price, 9.5)
+  assert.equal(node.currency, '$')
+  assert.equal(node.billing_cycle, 30)
+})
+
 test('maps system metrics with separate realtime and cumulative network fields', () => {
   const history = toSystemMetricHistory({
     cpu_pct: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 3.5 }],

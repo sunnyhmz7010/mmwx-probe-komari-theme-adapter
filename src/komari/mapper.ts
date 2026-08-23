@@ -373,10 +373,10 @@ export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): Ko
     swap_total: numberOrUndefined(server.swap_total) ?? 0,
     disk_total: numberOrUndefined(server.disk_total) ?? 0,
     weight: numberOrUndefined(server.weight) ?? 0,
-    price: numberOrUndefined(server.price) ?? 0,
-    billing_cycle: numberOrUndefined(server.billing_cycle) ?? 30,
+    price: firstFinite([server.renewal_price, server.renewal_price_cny, server.price]) ?? 0,
+    billing_cycle: numberOrUndefined(server.billing_cycle) ?? renewalCycleDays(server.renewal_cycle),
     auto_renewal: boolOrDefault(server.auto_renewal, false),
-    currency: stringOrDefault(server.currency, '$'),
+    currency: renewalCurrency(server),
     expired_at: isEmptyDateValue(server.expired_at ?? server.expires_at)
       ? NEVER_EXPIRES
       : dateTimeOrDefault(server.expired_at ?? server.expires_at, new Date(0)),
@@ -389,6 +389,26 @@ export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): Ko
     updated_at: dateTimeOrDefault(server.updated_at, now),
     public_remark: publicRemark(server) ?? '',
   }))
+}
+
+function renewalCycleDays(cycle: unknown): number {
+  const raw = typeof cycle === 'string' ? cycle.trim().toLowerCase() : ''
+  switch (raw) {
+    case 'month': return 30
+    case 'quarter': return 90
+    case 'half_year': return 180
+    case 'year': return 365
+    default: return 30
+  }
+}
+
+function renewalCurrency(server: ProbeServer): string {
+  const currency = server.currency?.trim()
+  if (currency) return currency
+  const renewal = server.renewal_currency?.trim()
+  if (renewal) return renewal
+  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return 'CNY'
+  return '$'
 }
 
 function trafficLimitType(server: ProbeServer): string {
