@@ -38,24 +38,30 @@ docker build -t mmwx-komari-adapter .  # 构建本地镜像
 - `PROBE_TOKEN` 只能用于 MMWX 上游请求和日志脱敏，不得暴露给主题构建、静态资源或 API 响应
 - 生产环境 `MMWX_ORIGIN` 必须使用 HTTPS；仅 localhost 和 127.0.0.1 允许 HTTP
 - Komari 兼容层默认只读，拒绝登录、完整后台管理和节点修改类接口；仅允许配置 `ADMIN_TOKEN` 后写入本项目自己的主题配置文件（位于容器内部运行目录）
-- 主题构建产物必须经过路径包含性、符号链接逃逸和 `index.html` 校验后再发布到运行目录
+- 主题构建产物必须经过路径包含性、符号链接逃逸和 `index.html` 校验后再发布到运行目录；构建命令失败时仅采用本次新生成的产物，拒绝误用构建前残留的旧产物
 - 新增接口兼容能力时，必须同步补测试和 README 的兼容边界说明
-- 数据映射约定：地区字段优先取 `region_country`（ISO 代码）；续费货币把 ISO 代码转符号（`CAD`→`C$` 等）；`ping.loss` 指标输出 0~1 比例；上游缺失字段按「省略 > `unknown` > 0」兜底，改动映射时同步补测试
+- 数据映射约定：地区字段优先取 `region_country`（ISO 代码）；续费货币把 ISO 代码转为 Komari 官方 12 种货币符号（`CNY`→`¥`、`USD`→`$`、`CAD`→`CA$` 等）；`ping.loss` 指标输出 0~1 比例；上游缺失字段按「省略 > `unknown` > 0」兜底，改动映射时同步补测试
 
 ## 架构分层
 
 ```
 src/main.ts          ← 入口：加载配置、构建主题、组装服务、生命周期处理
 src/config.ts        ← 环境变量解析与安全校验
+src/log.ts           ← 结构化日志与脱敏
 src/mmwx/client.ts   ← MMWX independent-probe HTTP/WebSocket 客户端
 src/mmwx/stream-relay.ts ← 主控降载：共享单条上游 WS、快照帧复用与广播
+src/mmwx/types.ts    ← MMWX 探针数据类型
 src/komari/mapper.ts ← MMWX 数据到 Komari 形态的映射
 src/komari/service.ts← 查询和历史数据服务
+src/komari/types.ts  ← Komari 兼容层数据类型
 src/http/api.ts      ← Komari 兼容 API 与 RPC2 路由
 src/http/server.ts   ← HTTP server 与 WebSocket 路由
 src/http/static.ts   ← 静态主题资源、SPA fallback 与内置资源兜底
 src/theme/loader.ts  ← 主题仓库克隆、构建、校验和发布
+src/theme/builder.ts ← 主题依赖安装与构建计划、产物校验
+src/theme/repository.ts ← 主题仓库地址校验与克隆
 src/theme/settings-store.ts ← 主题配置 JSON 文件读写与校验
+src/theme/types.ts   ← 主题加载与构建类型
 static-assets/       ← 内置国旗与 OS 图标资源（来源 junimo，Apache-2.0），随镜像打包
 ```
 

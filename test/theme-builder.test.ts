@@ -256,7 +256,7 @@ test('keeps a generated output directory when the build command exits non-zero',
     const result = await buildTheme({ ...plan, packageManager: 'npm' }, repoDir, outputDir, logger)
     assert.equal(result, outputDir)
     assert.equal(await readFile(path.join(outputDir, 'index.html'), 'utf8'), '<main>theme</main>')
-    assert.ok(logs.some((line) => line.startsWith('warn:主题构建命令失败，但检测到已生成的产物，继续启动')))
+    assert.ok(logs.some((line) => line.startsWith('warn:主题构建命令失败，但检测到本次生成的产物，继续启动')))
   } finally {
     fakeNpm.restorePath()
     await rm(repoDir, { recursive: true, force: true })
@@ -311,6 +311,26 @@ test('rejects a failed build command when no output was generated', async () => 
   try {
     const plan = await detectBuildPlan(repoDir)
     await assert.rejects(() => buildTheme({ ...plan, packageManager: 'npm' }, repoDir, outputDir), /failed/i)
+  } finally {
+    fakeNpm.restorePath()
+    await rm(repoDir, { recursive: true, force: true })
+    await rm(outputDir, { recursive: true, force: true })
+    await rm(fakeNpm.binDir, { recursive: true, force: true })
+  }
+})
+
+test('rejects stale pre-build output when the build command fails', async () => {
+  const repoDir = await packageFixture({
+    'package.json': JSON.stringify({ scripts: { build: 'build' } }),
+    'package-lock.json': '{}',
+    'dist/index.html': '<main>stale</main>',
+  })
+  const outputDir = await fixture()
+  const fakeNpm = await fakeNpmFixture({ writeOutputOnBuild: false })
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    await assert.rejects(() => buildTheme({ ...plan, packageManager: 'npm' }, repoDir, outputDir), /stale residue/i)
   } finally {
     fakeNpm.restorePath()
     await rm(repoDir, { recursive: true, force: true })

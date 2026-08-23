@@ -37,7 +37,7 @@ function spawnFile(file: string, args: readonly string[], options: { cwd: string
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk
       for (const line of chunk.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
-        logger.warn(`${phase}: ${line}`)
+        logger.info(`${phase}: ${line}`)
       }
     })
     child.once('error', reject)
@@ -174,6 +174,17 @@ async function findOutput(repoDir: string, candidates: readonly string[]): Promi
   throw new Error('Theme output must contain index.html in dist, build, out, public, or the repository root')
 }
 
+async function assertFreshlyGenerated(outputDir: string, buildStartedAt: number): Promise<void> {
+  const indexPath = path.join(outputDir, 'index.html')
+  const indexStat = await lstat(indexPath)
+  if (!indexStat.isFile() && !indexStat.isSymbolicLink()) {
+    throw new Error('Theme generated output index.html is not a file')
+  }
+  if (indexStat.mtimeMs < buildStartedAt) {
+    throw new Error('Theme output index.html predates the build, likely stale residue')
+  }
+}
+
 export async function buildTheme(plan: BuildPlan, repoDir: string, outputDir: string, logger: Logger = noopLogger): Promise<string> {
   const resolvedRepo = path.resolve(repoDir)
   const resolvedOutput = path.resolve(outputDir)
@@ -198,19 +209,26 @@ export async function buildTheme(plan: BuildPlan, repoDir: string, outputDir: st
     }
     logger.info('主题依赖安装完成')
     logger.info('主题构建命令开始', { command: `${executable} ${buildArgs.join(' ')}` })
+    const buildStartedAt = Date.now()
     try {
       await spawnFile(executable, buildArgs, options, logger, '主题构建命令')
     } catch (error) {
       const generatedOutputCandidates = plan.outputCandidates.filter((candidate) => candidate !== '.')
+      let generatedOutput: string | undefined
       try {
-        const generatedOutput = await findOutput(resolvedRepo, generatedOutputCandidates)
-        logger.warn('主题构建命令失败，但检测到已生成的产物，继续启动', {
-          output: generatedOutput,
-          reason: error instanceof Error ? error.message : 'unknown error',
-        })
+        generatedOutput = await findOutput(resolvedRepo, generatedOutputCandidates)
       } catch {
         throw error
       }
+      try {
+        await assertFreshlyGenerated(generatedOutput, buildStartedAt)
+      } catch (staleError) {
+        throw new Error(`Theme build failed and the output is stale: ${staleError instanceof Error ? staleError.message : 'unknown error'}`)
+      }
+      logger.warn('主题构建命令失败，但检测到本次生成的产物，继续启动', {
+        output: generatedOutput,
+        reason: error instanceof Error ? error.message : 'unknown error',
+      })
     }
     logger.info('主题构建命令完成')
   } else {

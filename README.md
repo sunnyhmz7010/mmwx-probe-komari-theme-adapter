@@ -208,7 +208,7 @@ http://localhost:8080/admin
 - 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做妙妙屋 X 主控代理，不改写路径、状态码和流式行为
 - 共享流降载：`ProbeStreamRelay` 在单进程内维护一条到主控的探针 WebSocket，把实时快照帧广播给所有下游访客；`/api/probe` 在 12 秒帧龄内复用最近一帧，历史序列 `/api/series` 实时直连；上游断开后指数退避重连，最后一名访客离开 30 秒后自动断开上游
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
-- 字段映射：地区字段优先取 `region_country`（ISO 代码）供主题解析国旗；续费货币把 ISO 代码转换为符号（`CAD`→`C$`、`CNY`→`¥`）；`ping.loss` 指标按 Komari 语义输出 0~1 比例
+- 字段映射：地区字段优先取 `region_country`（ISO 代码）供主题解析国旗；续费货币把 ISO 代码转换为 Komari 官方 12 种货币符号（`CNY`→`¥`、`USD`→`$`、`CAD`→`CA$` 等）；`ping.loss` 指标按 Komari 语义输出 0~1 比例
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
 - 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成
@@ -216,7 +216,7 @@ http://localhost:8080/admin
 - 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；保存操作必须携带 `ADMIN_TOKEN`
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程
-- 输出校验：构建产物必须包含 `index.html`，并通过路径包含性和符号链接检查防止目录逃逸
+- 输出校验：构建产物必须包含 `index.html`，并通过路径包含性和符号链接检查防止目录逃逸；构建命令失败时仅采用本次新生成的产物，拒绝误用构建前残留的旧产物
 - 主题资源兜底：模拟 Komari 主控的静态资源路径 `/assets/flags/`（国旗）和 `/assets/logo/`（操作系统图标）。主题构建产物自带这些资源时优先主题，否则回退到镜像内置资源；两者都不存在时直接 404，避免 SPA fallback 返回 HTML 导致图标裂图
 
 ## 🧱 技术栈
@@ -234,10 +234,12 @@ mmwx-probe-komari-theme-adapter/
 ├── src/                         # TypeScript 源码
 │   ├── main.ts                  # 服务入口、启动和关闭生命周期
 │   ├── config.ts                # 环境变量解析与安全校验
+│   ├── log.ts                   # 结构化日志与脱敏
 │   ├── http/                    # HTTP、静态资源和 API 路由
 │   ├── komari/                  # Komari 数据映射和服务层
-│   ├── mmwx/                    # MMWX independent-probe 客户端
+│   ├── mmwx/                    # MMWX independent-probe 客户端与流中继
 │   └── theme/                   # 主题仓库加载、构建和发布
+├── static-assets/               # 内置国旗与系统图标资源兜底
 ├── test/                        # node:test 单元与兼容性测试
 ├── .github/                     # GitHub Actions 与 Issue 模板
 ├── compose.yaml                 # GHCR 镜像部署示例
