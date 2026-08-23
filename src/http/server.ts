@@ -157,18 +157,19 @@ function adminThemeSettingsHtml(theme: LoadedTheme): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MMWX Komari Theme Settings</title>
+<title>MMWX Probe Komari Theme Adapter Settings</title>
 <style>
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:960px;margin:32px auto;padding:0 16px;color:#111827;background:#f9fafb}
 main{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;box-shadow:0 1px 2px #0000000d}
 label{display:block;margin:14px 0 6px;font-weight:600}.field{margin-bottom:14px}input,select,textarea{box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit}input[type=checkbox]{width:auto}
 textarea{min-height:120px}button{padding:10px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}button:disabled{background:#9ca3af}
 pre,.notice{background:#f3f4f6;border-radius:8px;padding:12px;overflow:auto}.muted{color:#6b7280}.error{color:#b91c1c}.ok{color:#047857}
+.empty{font-size:1.5rem;font-weight:700;text-align:center;padding:56px 0;color:#374151}
 </style>
 </head>
 <body>
 <main>
-<h1>MMWX Komari Theme Settings</h1>
+<h1>MMWX Probe Komari Theme Adapter Settings</h1>
 <p class="muted">当前主题：${title}</p>
 <p class="muted">仓库：${htmlEscape(theme.source.repoUrl)} @ ${htmlEscape(theme.source.ref)}</p>
 <div id="app" class="notice">加载中...</div>
@@ -215,22 +216,22 @@ async function boot(){
   const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
   const cfg=manifest&&manifest.configuration;
   const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
-  if(!cfg){app.innerHTML='<p>当前主题未声明可配置项。</p><h2>高级 JSON</h2><textarea id="raw">'+html(JSON.stringify(settings,null,2))+'</textarea>'+saveBlock();attachSave(true);return}
+  if(!cfg){app.innerHTML='<p class="empty">当前主题未声明可配置项。</p>';return}
   const type=String(cfg.type||"managed").toLowerCase();
   if(type==="redirect"){app.innerHTML='<p>主题配置使用跳转页面：</p><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p>';return}
   if(type==="raw"){app.innerHTML='<iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:1px solid #ddd;border-radius:8px" srcdoc="'+html(cfg.data||"")+'"></iframe>';return}
   const fields=Array.isArray(cfg.data)?cfg.data:[];
-  app.innerHTML=fields.map((f)=>renderField(f,settings)).join("")+saveBlock();attachSave(false);
+  app.innerHTML=fields.map((f)=>renderField(f,settings)).join("")+saveBlock();attachSave();
  }catch(e){app.innerHTML='<p class="error">'+html(e.message||e)+'</p>'}
 }
 function saveBlock(){return '<div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button id="save">保存主题配置</button><p id="msg" class="muted"></p>'}
-function attachSave(raw){
+function attachSave(){
  const button=document.getElementById("save");
  if(!button)return;
  button.onclick=async()=>{
   const msg=document.getElementById("msg");
   try{
-   const body=raw?JSON.parse(document.getElementById("raw").value||"{}"):collect();
+   const body=collect();
    await json("/api/admin/theme/settings",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+document.getElementById("admin-token").value},body:JSON.stringify(body)});
    msg.className="ok";msg.textContent="已保存";
   }catch(e){msg.className="error";msg.textContent=e.message||e}

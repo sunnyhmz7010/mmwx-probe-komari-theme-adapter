@@ -138,7 +138,7 @@ test('serves static assets and SPA fallback safely', async () => {
     const admin = await httpGet(baseUrl, '/admin/settings/theme')
     assert.equal(admin.status, 200)
     assert.match(admin.contentType ?? '', /html/)
-    assert.match(admin.body, /MMWX Komari Theme Settings/)
+    assert.match(admin.body, /MMWX Probe Komari Theme Adapter Settings/)
     assert.match(admin.body, /\/api\/admin\/theme\/settings/)
   } finally {
     await serverHandle.close()
