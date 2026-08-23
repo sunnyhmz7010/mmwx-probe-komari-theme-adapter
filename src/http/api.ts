@@ -169,6 +169,10 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
     if (rpc.method === 'common:getNodesLatestStatus') {
       return rpcResult(id, await service.getNodesLatestStatus())
     }
+    if (rpc.method === 'common:getNodeRecentStatus') {
+      if (typeof params.uuid !== 'string' || !params.uuid) return rpcError(id, -32602, 'Invalid params')
+      return rpcResult(id, await service.getNodeRecentStatus(params.uuid))
+    }
     if (rpc.method === 'public:getClientRecentRecords') {
       return rpcResult(id, await service.getClientRecentRecords())
     }

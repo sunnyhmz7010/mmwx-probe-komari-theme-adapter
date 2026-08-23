@@ -27,6 +27,7 @@ import type {
   KomariPublicNode,
   KomariPublicSettings,
   KomariRecentReport,
+  KomariRecentStatusResp,
   KomariSnapshot,
   KomariQueryMetrics,
   KomariVersionInfo,
@@ -489,6 +490,11 @@ export class KomariDataService {
 
   public async getClientRecentRecords(): Promise<KomariRecentReport[]> {
     return toKomariRecentReports(await this.getProbePayload())
+  }
+
+  public async getNodeRecentStatus(uuid: string): Promise<KomariRecentStatusResp> {
+    const records = (await this.getClientRecentRecords()).filter((record) => record.uuid === uuid)
+    return { count: records.length, records }
   }
 
   public async getVersion(): Promise<KomariVersionInfo> {

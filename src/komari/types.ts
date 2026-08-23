@@ -83,6 +83,11 @@ export interface KomariRecentReport {
   updated_at: string
 }
 
+export interface KomariRecentStatusResp {
+  count: number
+  records: KomariRecentReport[]
+}
+
 export interface KomariPublicSettings {
   sitename: string
   description: string
