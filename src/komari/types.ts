@@ -10,28 +10,28 @@ export interface KomariPublicNode {
   virtualization: string
   arch: string
   cpu_cores: number
-  cpu_physical_cores: number
+  cpu_physical_cores?: number
   os: string
   kernel_version: string
   gpu_name: string
   region: string
   mem_total: number
-  swap_total: number
+  swap_total?: number
   disk_total: number
-  weight: number
+  weight?: number
   price: number
   billing_cycle: number
-  auto_renewal: boolean
+  auto_renewal?: boolean
   currency: string
   expired_at: string
-  group: string
-  tags: string
-  hidden: boolean
+  group?: string
+  tags?: string
+  hidden?: boolean
   traffic_limit: number
   traffic_limit_type: string
-  created_at: string
-  updated_at: string
-  public_remark: string
+  created_at?: string
+  updated_at?: string
+  public_remark?: string
 }
 
 export interface KomariNodeStatus {

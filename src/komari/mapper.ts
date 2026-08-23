@@ -316,8 +316,10 @@ function stringOrDefault(value: unknown, fallback: string): string {
   return fallback
 }
 
-function boolOrDefault(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback
+function stringOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
 }
 
 function dateTimeOrDefault(value: unknown, fallback: Date): string {
@@ -340,6 +342,26 @@ function dateTimeOrDefault(value: unknown, fallback: Date): string {
   return fallback.toISOString()
 }
 
+function dateTimeOrUndefined(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined
+  if (typeof value === 'number') {
+    const timestamp = value > 1e12 ? value : value * 1000
+    return new Date(timestamp).toISOString()
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+    const numeric = Number(trimmed)
+    if (Number.isFinite(numeric)) {
+      const timestamp = numeric > 1e12 ? numeric : numeric * 1000
+      return new Date(timestamp).toISOString()
+    }
+    const parsed = Date.parse(trimmed)
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString()
+  }
+  return undefined
+}
+
 function regionLabel(server: ProbeServer): string {
   return server.region?.trim()
     || server.country?.trim()
@@ -356,39 +378,52 @@ function publicRemark(server: ProbeServer): string | undefined {
     || undefined
 }
 
-export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): KomariPublicNode[] {
-  return payload.servers.map((server, index) => ({
-    uuid: `mmwx-${index}`,
-    name: nodeName(server, index),
-    cpu_name: stringOrDefault(server.cpu_name ?? server.cpu_model, 'Unknown CPU'),
-    virtualization: stringOrDefault(server.virtualization, 'unknown'),
-    arch: stringOrDefault(server.arch, 'amd64'),
-    cpu_cores: numberOrUndefined(server.cpu_cores) ?? 1,
-    cpu_physical_cores: numberOrUndefined(server.cpu_physical_cores) ?? 1,
-    os: stringOrDefault(server.os, 'Linux'),
-    kernel_version: stringOrDefault(server.kernel_version ?? server.kernel, 'unknown'),
-    gpu_name: stringOrDefault(server.gpu_name, 'unknown'),
-    region: regionLabel(server),
-    mem_total: numberOrUndefined(server.mem_total) ?? 0,
-    swap_total: numberOrUndefined(server.swap_total) ?? 0,
-    disk_total: numberOrUndefined(server.disk_total) ?? 0,
-    weight: numberOrUndefined(server.weight) ?? 0,
-    price: firstFinite([server.renewal_price, server.renewal_price_cny, server.price]) ?? 0,
-    billing_cycle: numberOrUndefined(server.billing_cycle) ?? renewalCycleDays(server.renewal_cycle),
-    auto_renewal: boolOrDefault(server.auto_renewal, false),
-    currency: renewalCurrency(server),
-    expired_at: isEmptyDateValue(server.expired_at ?? server.expires_at)
-      ? NEVER_EXPIRES
-      : dateTimeOrDefault(server.expired_at ?? server.expires_at, new Date(0)),
-    group: stringOrDefault(server.group, ''),
-    tags: stringOrDefault(server.tags, ''),
-    hidden: boolOrDefault(server.hidden, false),
-    traffic_limit: numberOrUndefined(server.traffic_limit) ?? 0,
-    traffic_limit_type: trafficLimitType(server),
-    created_at: dateTimeOrDefault(server.created_at, now),
-    updated_at: dateTimeOrDefault(server.updated_at, now),
-    public_remark: publicRemark(server) ?? '',
-  }))
+export function toKomariPublicNodes(payload: ProbePayload): KomariPublicNode[] {
+  return payload.servers.map((server, index) => {
+    const node: KomariPublicNode = {
+      uuid: `mmwx-${index}`,
+      name: nodeName(server, index),
+      cpu_name: stringOrDefault(server.cpu_name ?? server.cpu_model, 'unknown'),
+      virtualization: stringOrDefault(server.virtualization, 'unknown'),
+      arch: stringOrDefault(server.arch, 'unknown'),
+      cpu_cores: numberOrUndefined(server.cpu_cores) ?? 0,
+      os: stringOrDefault(server.os, 'unknown'),
+      kernel_version: stringOrDefault(server.kernel_version ?? server.kernel, 'unknown'),
+      gpu_name: stringOrDefault(server.gpu_name, 'unknown'),
+      region: regionLabel(server),
+      mem_total: numberOrUndefined(server.mem_total) ?? 0,
+      disk_total: numberOrUndefined(server.disk_total) ?? 0,
+      price: firstFinite([server.renewal_price, server.renewal_price_cny, server.price]) ?? 0,
+      billing_cycle: numberOrUndefined(server.billing_cycle) ?? renewalCycleDays(server.renewal_cycle),
+      currency: renewalCurrency(server),
+      expired_at: isEmptyDateValue(server.expired_at ?? server.expires_at)
+        ? NEVER_EXPIRES
+        : dateTimeOrDefault(server.expired_at ?? server.expires_at, new Date(0)),
+      traffic_limit: numberOrUndefined(server.traffic_limit) ?? 0,
+      traffic_limit_type: trafficLimitType(server),
+    }
+    const cpuPhysicalCores = numberOrUndefined(server.cpu_physical_cores)
+    const swapTotal = numberOrUndefined(server.swap_total)
+    const weight = numberOrUndefined(server.weight)
+    const autoRenewal = server.auto_renewal === true ? true : undefined
+    const group = stringOrUndefined(server.group)
+    const tags = stringOrUndefined(server.tags)
+    const hidden = server.hidden === true ? true : undefined
+    const createdAt = dateTimeOrUndefined(server.created_at)
+    const updatedAt = dateTimeOrUndefined(server.updated_at)
+    const remark = publicRemark(server)
+    if (cpuPhysicalCores !== undefined) node.cpu_physical_cores = cpuPhysicalCores
+    if (swapTotal !== undefined) node.swap_total = swapTotal
+    if (weight !== undefined) node.weight = weight
+    if (autoRenewal !== undefined) node.auto_renewal = autoRenewal
+    if (group !== undefined) node.group = group
+    if (tags !== undefined) node.tags = tags
+    if (hidden !== undefined) node.hidden = hidden
+    if (createdAt !== undefined) node.created_at = createdAt
+    if (updatedAt !== undefined) node.updated_at = updatedAt
+    if (remark !== undefined) node.public_remark = remark
+    return node
+  })
 }
 
 function renewalCycleDays(cycle: unknown): number {
