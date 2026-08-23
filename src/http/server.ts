@@ -21,6 +21,7 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
   const clients = new Set<WebSocket>()
   const streams = new Set<{ downstream: WebSocket; upstream: WebSocket }>()
   const server = http.createServer(async (request, response) => {
+    if (serveHealthcheck(request, response)) return
     if (await api.handle(request, response)) return
     if (serveThemeManifest(theme, request, response)) return
     if (serveThemeSettingsAdmin(theme, request, response)) return
@@ -122,6 +123,19 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
       await new Promise<void>((resolve) => server.close(() => resolve()))
     },
   }
+}
+
+function serveHealthcheck(request: IncomingMessage, response: ServerResponse): boolean {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false
+  const url = new URL(request.url ?? '/', 'http://adapter.local')
+  if (url.pathname !== '/ping') return false
+  response.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  })
+  response.end(request.method === 'HEAD' ? undefined : 'pong')
+  return true
 }
 
 function serveThemeManifest(theme: LoadedTheme, request: IncomingMessage, response: ServerResponse): boolean {

@@ -78,6 +78,31 @@ async function httpGet(baseUrl: string, pathname: string): Promise<{ status: num
   })
 }
 
+test('serves /ping health check as plain text pong', async () => {
+  const theme = await tempTheme()
+  const port = await reservePort()
+  const mmwx = {
+    fetchProbe: async () => ({ servers: [{ name: 'node-0', online: true }] }),
+    fetchSeries: async () => ({ systems: [] }),
+    streamUrl: () => 'ws://127.0.0.1:1/api/public/probe-ws',
+    probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
+  } as never
+  const service = new KomariDataService(mmwx, 1000)
+  const api = createApiRouter(service)
+  const serverHandle = createHttpServer(config({ port }), theme, api, mmwx)
+
+  try {
+    await serverHandle.listen()
+    const health = await httpGet(`http://127.0.0.1:${port}`, '/ping')
+    assert.equal(health.status, 200)
+    assert.match(health.contentType ?? '', /text\/plain/)
+    assert.equal(health.body, 'pong')
+  } finally {
+    await serverHandle.close()
+    await rm(theme.directory, { recursive: true, force: true })
+  }
+})
+
 test('serves static assets and SPA fallback safely', async () => {
   const theme = await tempTheme()
   const port = await reservePort()

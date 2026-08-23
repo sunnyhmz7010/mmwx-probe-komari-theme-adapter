@@ -75,6 +75,7 @@ function fakeService(overrides: Record<string, unknown> = {}): KomariDataService
       records: [{ client: 'mmwx-0', time: '2026-08-21T00:00:00.000Z', cpu: 1 }],
     }),
     getPublicSettings: async () => defaultPublicSettings,
+    getVersion: async () => ({ version: 'v0.0.1', hash: 'test-hash' }),
     ...overrides,
   } as unknown as KomariDataService
 }
@@ -132,6 +133,19 @@ test('API routes return Komari-compatible public resources', async () => {
     const me = await request(baseUrl, '/api/me')
     assert.equal(me.status, 200)
     assert.deepEqual(me.body, { logged_in: false })
+  })
+})
+
+test('API version endpoint returns adapter version information', async () => {
+  await withApi(fakeService(), async (baseUrl) => {
+    const version = await request(baseUrl, '/api/version')
+    assert.equal(version.status, 200)
+    assertJsonHeaders(version)
+    assert.deepEqual(version.body, {
+      status: 'success',
+      message: 'success',
+      data: { version: 'v0.0.1', hash: 'test-hash' },
+    })
   })
 })
 

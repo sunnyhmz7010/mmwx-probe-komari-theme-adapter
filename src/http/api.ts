@@ -38,6 +38,10 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           return await handleRpc2(service, request, response)
         }
 
+        if (url.pathname === '/api/version' && request.method === 'GET') {
+          return json(response, 200, envelope(await service.getVersion()))
+        }
+
         if (url.pathname === '/api/admin/theme/settings' && request.method === 'POST') {
           if (!options.adminToken) return json(response, 403, envelope(null, 'admin theme settings are disabled', 'error'))
           if (!hasAdminToken(request, options.adminToken)) return json(response, 401, envelope(null, 'unauthorized', 'error'))
