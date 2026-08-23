@@ -455,8 +455,9 @@ function renewalCurrency(server: ProbeServer): string {
 function currencySymbol(code: unknown): string {
   const normalized = typeof code === 'string' ? code.trim().toUpperCase() : ''
   const symbols: Record<string, string> = {
-    USD: '$', CNY: '¥', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$',
-    HKD: 'HK$', TWD: 'NT$', SGD: 'S$', KRW: '₩', INR: '₹', BRL: 'R$',
+    CNY: '¥', USD: '$', HKD: 'HK$', EUR: '€', GBP: '£',
+    JPY: '¥', RUB: '₽', CHF: '₣', INR: '₹', VND: '₫', THB: '฿',
+    CAD: 'CA$',
   }
   return symbols[normalized] ?? (normalized || '$')
 }
