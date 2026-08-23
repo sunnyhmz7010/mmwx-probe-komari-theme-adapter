@@ -438,21 +438,27 @@ function renewalCycleDays(cycle: unknown): number {
 }
 
 function renewalPrice(server: ProbeServer): number {
-  return firstFinite([server.renewal_price_cny, server.renewal_price, server.price]) ?? 0
+  const price = firstFinite([server.renewal_price, server.renewal_price_cny, server.price])
+  return price === undefined ? 0 : Math.round(price * 100) / 100
 }
 
 function renewalCurrency(server: ProbeServer): string {
-  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return '¥'
-  if (currencyCode(server.renewal_currency) === 'CNY') return '¥'
   const explicit = server.currency?.trim()
   if (explicit) return explicit
+  if (numberOrUndefined(server.renewal_price) !== undefined) {
+    return currencySymbol(server.renewal_currency)
+  }
+  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return '¥'
   return '$'
 }
 
-function currencyCode(value: unknown): string {
-  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : ''
-  if (normalized === '¥' || normalized === '￥' || normalized === 'RMB') return 'CNY'
-  return normalized
+function currencySymbol(code: unknown): string {
+  const normalized = typeof code === 'string' ? code.trim().toUpperCase() : ''
+  const symbols: Record<string, string> = {
+    USD: '$', CNY: '¥', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$',
+    HKD: 'HK$', TWD: 'NT$', SGD: 'S$', KRW: '₩', INR: '₹', BRL: 'R$',
+  }
+  return symbols[normalized] ?? (normalized || '$')
 }
 
 const CARRIER_LABELS: Record<string, string> = {

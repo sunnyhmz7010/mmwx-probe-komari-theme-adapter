@@ -164,8 +164,8 @@ test('maps MMWX renewal fields into Komari price, currency and billing cycle', (
     })],
   })
 
-  assert.equal(node.price, 259.94)
-  assert.equal(node.currency, '¥')
+  assert.equal(node.price, 53.29)
+  assert.equal(node.currency, 'C$')
   assert.equal(node.billing_cycle, 90)
 })
 
