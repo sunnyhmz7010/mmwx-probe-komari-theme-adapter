@@ -182,7 +182,7 @@ http://localhost:8080/admin/settings/theme
 ### 🧪 已实测主题仓库
 
 | 主题仓库 | 页面显示 | 数据兼容性 | 主题配置 |
-| --- | --- | --- | --- |
+| --- | :---: | --- | --- |
 | `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | ✅ | 大部分数据无法显示 | ❌ 有配置项，未兼容 |
 | `https://github.com/Tokinx/komari-theme-emerald` | ✅ | ✅ 全部支持 | ✅ 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | ✅ | ✅ 全部支持 | — 主题本身无配置项 |
