@@ -145,6 +145,17 @@ test('serves static assets and SPA fallback safely', async () => {
     assert.equal(adminSub.status, 404)
     const adminOther = await httpGet(baseUrl, '/admin/anything')
     assert.equal(adminOther.status, 404)
+
+    const builtinFlag = await httpGet(baseUrl, '/assets/flags/US.svg')
+    assert.equal(builtinFlag.status, 200)
+    assert.match(builtinFlag.contentType ?? '', /image\/svg\+xml/)
+
+    const builtinLogo = await httpGet(baseUrl, '/assets/logo/os-debian.svg')
+    assert.equal(builtinLogo.status, 200)
+    assert.match(builtinLogo.contentType ?? '', /image\/svg\+xml/)
+
+    const missingFlag = await httpGet(baseUrl, '/assets/flags/ZZ.svg')
+    assert.equal(missingFlag.status, 404)
   } finally {
     await serverHandle.close()
     await rm(theme.directory, { recursive: true, force: true })

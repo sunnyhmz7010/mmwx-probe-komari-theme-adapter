@@ -17,6 +17,11 @@ const CONTENT_TYPES: Record<string, string> = {
 
 const HEAD_SYNC_SCRIPT = `<script>(()=>{const text=(v)=>typeof v==="string"?v.trim():"";fetch("/api/probe",{cache:"no-store"}).then((r)=>r.ok?r.json():null).then((d)=>{if(!d)return;const title=text(d.title);if(title)document.title=title;const icon=text(d.icon);if(icon){let link=document.querySelector('link[rel~="icon"]');if(!link){link=document.createElement("link");link.rel="icon";document.head.appendChild(link)}link.href=icon}}).catch(()=>{})})();</script>`
 
+// 模拟 Komari 主控提供的主题资源路径。主题自带这些资源时优先主题，
+// 否则回退到镜像内置资源，保证依赖主控静态资源的主题（如 emerald）图标可用。
+const BUILTIN_ASSETS_DIR = path.resolve(process.cwd(), 'static-assets')
+const BUILTIN_ASSET_PREFIXES = ['/assets/flags/', '/assets/logo/']
+
 interface Candidate {
   filePath: string
   contentType: string
@@ -29,6 +34,14 @@ function isWithin(parent: string, candidate: string): boolean {
 
 function contentTypeFor(filePath: string): string {
   return CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+}
+
+function isBuiltinAssetPath(pathname: string): boolean {
+  return BUILTIN_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+}
+
+function builtinAssetPath(pathname: string): string {
+  return pathname.replace(/^\/assets\/(flags|logo)\//, '/$1/')
 }
 
 async function resolveCandidate(root: string, pathname: string): Promise<Candidate | null> {
@@ -63,25 +76,37 @@ async function indexCandidate(root: string): Promise<Candidate | null> {
   return { filePath: indexReal, contentType: 'text/html; charset=utf-8' }
 }
 
-export async function serveStatic(root: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-  if (request.method !== 'GET' && request.method !== 'HEAD') return false
-  const url = new URL(request.url ?? '/', 'http://adapter.local')
-  const candidate = url.pathname === '/' ? await indexCandidate(root) : await resolveCandidate(root, url.pathname)
-  const selected = candidate ?? await indexCandidate(root)
-  if (!selected) return false
-
-  let body = request.method === 'HEAD' ? undefined : await readFile(selected.filePath)
-  if (body && selected.contentType.startsWith('text/html')) {
+async function serveCandidate(candidate: Candidate, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  let body = request.method === 'HEAD' ? undefined : await readFile(candidate.filePath)
+  if (body && candidate.contentType.startsWith('text/html')) {
     const html = body.toString('utf8')
     body = Buffer.from(html.includes('</head>')
       ? html.replace('</head>', `${HEAD_SYNC_SCRIPT}</head>`)
       : `${html}${HEAD_SYNC_SCRIPT}`)
   }
   response.writeHead(200, {
-    'Content-Type': selected.contentType,
+    'Content-Type': candidate.contentType,
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'no-store',
   })
   response.end(body)
+}
+
+export async function serveStatic(root: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false
+  const url = new URL(request.url ?? '/', 'http://adapter.local')
+
+  // flags/logo 资源：优先主题构建产物，未命中回退内置资源，避免 SPA fallback 返回 HTML 导致裂图。
+  if (isBuiltinAssetPath(url.pathname)) {
+    const candidate = await resolveCandidate(root, url.pathname) ?? await resolveCandidate(BUILTIN_ASSETS_DIR, builtinAssetPath(url.pathname))
+    if (!candidate) return false
+    await serveCandidate(candidate, request, response)
+    return true
+  }
+
+  const candidate = url.pathname === '/' ? await indexCandidate(root) : await resolveCandidate(root, url.pathname)
+  const selected = candidate ?? await indexCandidate(root)
+  if (!selected) return false
+  await serveCandidate(selected, request, response)
   return true
 }

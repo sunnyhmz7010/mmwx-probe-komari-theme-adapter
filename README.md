@@ -23,6 +23,8 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 这里的“Komari 兼容”只表示 API 形状兼容，不表示上游项目关系或授权关系
 - 本项目若使用或兼容 Komari 生态中的第三方主题，相关主题的版权、商标和知识产权均归其原作者所有；本项目与这些第三方主题作者无隶属、合作或背书关系，展示/兼容不代表作者认可本项目
 
+> ℹ️ **内置资源声明**：`static-assets/` 下的国旗（flags）与操作系统图标（logo）资源来自 Komari 生态第三方主题 [vaspike/junimo](https://github.com/vaspike/junimo)（Apache-2.0 许可），仅用于模拟 Komari 主控的静态资源路径、作为主题未自带资源时的兜底。相关资源版权归原主题作者所有。
+
 ## 🚀 核心能力
 
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
@@ -186,9 +188,9 @@ http://localhost:8080/admin
 | 仓库地址 | 仓库分支 | 页面显示 | 数据兼容性 | 主题配置 |
 | --- | :---: | :---: | --- | --- |
 | `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | 待测试 | 待测试 |
-| `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ |  ⚠️ 国家与系统图标无法显示 | 有配置项，已兼容 |
+| `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ | ✅ 全部支持（国家/系统图标由内置资源兜底） | 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
-| `https://github.com/vaspike/junimo` | main | ✅ | ⚠️ 延迟与丢包率间歇存在无样本区间 | 主题本身无配置项 |
+| `https://github.com/vaspike/junimo` | main | ✅ | ⚠️ 延迟与丢包率间歇无样本区间（上游数据空档，丢包率数值已修正） | 主题本身无配置项 |
 
 > ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、TCP/UDP 连接数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
 
@@ -208,6 +210,7 @@ http://localhost:8080/admin
 - 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做妙妙屋 X 主控代理，不改写路径、状态码和流式行为
 - 共享流降载：`ProbeStreamRelay` 在单进程内维护一条到主控的探针 WebSocket，把实时快照帧广播给所有下游访客；`/api/probe` 在 12 秒帧龄内复用最近一帧，历史序列 `/api/series` 实时直连；上游断开后指数退避重连，最后一名访客离开 30 秒后自动断开上游
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
+- 字段映射：地区字段优先取 `region_country`（ISO 代码）供主题解析国旗；续费货币把 ISO 代码转换为符号（`CAD`→`C$`、`CNY`→`¥`）；`ping.loss` 指标按 Komari 语义输出 0~1 比例
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
 - 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成
@@ -216,6 +219,7 @@ http://localhost:8080/admin
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程
 - 输出校验：构建产物必须包含 `index.html`，并通过路径包含性和符号链接检查防止目录逃逸
+- 主题资源兜底：模拟 Komari 主控的静态资源路径 `/assets/flags/`（国旗）和 `/assets/logo/`（操作系统图标）。主题构建产物自带这些资源时优先主题，否则回退到镜像内置资源；两者都不存在时直接 404，避免 SPA fallback 返回 HTML 导致图标裂图
 
 ## 🧱 技术栈
 

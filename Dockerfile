@@ -8,6 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci
 COPY src ./src
+COPY static-assets ./static-assets
 COPY test ./test
 RUN npm run build
 
@@ -29,6 +30,7 @@ WORKDIR /app
 COPY --chown=adapter:adapter --from=build /app/package.json /app/package-lock.json ./
 RUN npm ci --omit=dev
 COPY --chown=adapter:adapter --from=build /app/dist ./dist
+COPY --chown=adapter:adapter --from=build /app/static-assets ./static-assets
 
 USER adapter
 EXPOSE 8080
