@@ -73,7 +73,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           return json(response, 200, envelope(await service.getPublicSettings()))
         }
         if (url.pathname === '/api/me') {
-          return json(response, 200, { logged_in: false })
+          return json(response, 200, await service.getMe())
         }
         if (url.pathname === '/api/records/ping') {
           return json(response, 200, await service.getPingHistory(queryFrom(url)))
@@ -153,6 +153,12 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
   const params = rpc.params ?? {}
   try {
     if (rpc.method === 'rpc.ping') return rpcResult(id, 'pong')
+    if (rpc.method === 'common:getMe' || rpc.method === 'public:getMe') {
+      return rpcResult(id, await service.getMe())
+    }
+    if (rpc.method === 'common:getPublicInfo') {
+      return rpcResult(id, await service.getPublicInfo())
+    }
     if (rpc.method === 'nodes.list' || rpc.method === 'public.nodes' || rpc.method === 'public:getNodesInformation') {
       if (rpc.method === 'public:getNodesInformation') {
         return rpcResult(id, await service.getNodesInformation())
@@ -167,14 +173,14 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
       return rpcResult(id, await service.getNodes())
     }
     if (rpc.method === 'common:getNodesLatestStatus') {
-      return rpcResult(id, await service.getNodesLatestStatus())
+      return rpcResult(id, await service.getNodesLatestStatus(params))
     }
     if (rpc.method === 'common:getNodeRecentStatus') {
       if (typeof params.uuid !== 'string' || !params.uuid) return rpcError(id, -32602, 'Invalid params')
       return rpcResult(id, await service.getNodeRecentStatus(params.uuid))
     }
     if (rpc.method === 'public:getClientRecentRecords') {
-      return rpcResult(id, await service.getClientRecentRecords())
+      return rpcResult(id, await service.getClientRecentRecords(params))
     }
     if (rpc.method === 'public:getVersion') {
       return rpcResult(id, await service.getVersion())

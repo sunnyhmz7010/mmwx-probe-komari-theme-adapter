@@ -7,7 +7,7 @@ import {
   toKomariNode,
   toKomariNodeStatusMap,
   toKomariPublicNodes,
-  toKomariRecentReports,
+  toKomariRecentStatusRecords,
   toKomariRecord,
   toKomariPingRecords,
   toLoadHistory,
@@ -19,6 +19,8 @@ import type {
   KomariLoadRecords,
   KomariMetricPoint,
   KomariMetricSeries,
+  KomariMeInfo,
+  KomariNodeStatus,
   KomariNodeStatusMap,
   KomariPingMetricStat,
   KomariPingMetricStats,
@@ -26,7 +28,6 @@ import type {
   KomariPublicPingTask,
   KomariPublicNode,
   KomariPublicSettings,
-  KomariRecentReport,
   KomariRecentStatusResp,
   KomariSnapshot,
   KomariQueryMetrics,
@@ -444,13 +445,29 @@ export class KomariDataService {
     return toProbePayload((await this.getSnapshotValue()).payload, this.themeSource)
   }
 
-  public async getNodesInformation(): Promise<KomariPublicNode[]> {
-    return toKomariPublicNodes(await this.getProbePayload())
+  public async getNodesInformation(includeHidden = false): Promise<KomariPublicNode[]> {
+    const nodes = toKomariPublicNodes(await this.getProbePayload())
+    return includeHidden ? nodes : nodes.filter((node) => !node.hidden)
   }
 
   public async getNodes(): Promise<Record<string, KomariPublicNode>> {
-    const nodes = await this.getNodesInformation()
+    const nodes = await this.getNodesInformation(true)
     return Object.fromEntries(nodes.map((node) => [node.uuid, node]))
+  }
+
+  public async getPublicInfo(): Promise<KomariPublicSettings> {
+    return await this.getPublicSettings()
+  }
+
+  public async getMe(): Promise<KomariMeInfo> {
+    return {
+      logged_in: false,
+      username: 'Guest',
+      uuid: '',
+      sso_id: '',
+      sso_type: '',
+      '2fa_enabled': false,
+    }
   }
 
   public async getPublicSettings(): Promise<KomariPublicSettings> {
@@ -484,16 +501,24 @@ export class KomariDataService {
     }
   }
 
-  public async getNodesLatestStatus(): Promise<KomariNodeStatusMap> {
-    return toKomariNodeStatusMap(await this.getProbePayload())
+  public async getNodesLatestStatus(query: SeriesQuery = {}): Promise<KomariNodeStatusMap> {
+    const status = toKomariNodeStatusMap(await this.getProbePayload())
+    const entityIds = resolveEntityIds(query)
+    if (entityIds.length === 0) return status
+    const wanted = new Set(entityIds)
+    return Object.fromEntries(Object.entries(status).filter(([uuid]) => wanted.has(uuid)))
   }
 
-  public async getClientRecentRecords(): Promise<KomariRecentReport[]> {
-    return toKomariRecentReports(await this.getProbePayload())
+  public async getClientRecentRecords(query: SeriesQuery = {}): Promise<KomariNodeStatus[]> {
+    const records = toKomariRecentStatusRecords(await this.getProbePayload())
+    const entityIds = resolveEntityIds(query)
+    if (entityIds.length === 0) return records
+    const wanted = new Set(entityIds)
+    return records.filter((record) => wanted.has(record.client))
   }
 
   public async getNodeRecentStatus(uuid: string): Promise<KomariRecentStatusResp> {
-    const records = (await this.getClientRecentRecords()).filter((record) => record.uuid === uuid)
+    const records = await this.getClientRecentRecords({ uuid })
     return { count: records.length, records }
   }
 

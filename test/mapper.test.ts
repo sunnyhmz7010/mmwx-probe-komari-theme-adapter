@@ -245,20 +245,20 @@ test('caches snapshots, deduplicates concurrent requests, and serves a short sta
     },
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
   }
-  const service = new KomariDataService(client, 20)
+  const service = new KomariDataService(client, 100)
 
   const [first, second] = await Promise.all([service.getSnapshot(), service.getSnapshot()])
   assert.equal(calls, 1)
   assert.equal(first.nodes[0].uuid, 'mmwx-0')
   assert.deepEqual(second, first)
 
-  await new Promise((resolve) => setTimeout(resolve, 25))
+  await new Promise((resolve) => setTimeout(resolve, 120))
   shouldFail = true
   const stale = await service.getSnapshot()
   assert.deepEqual(stale, first)
   assert.equal(calls, 2)
 
-  await new Promise((resolve) => setTimeout(resolve, 25))
+  await new Promise((resolve) => setTimeout(resolve, 120))
   await assert.rejects(() => service.getSnapshot(), (error: unknown) => (
     error instanceof Error
       && (error as { statusCode?: number }).statusCode === 502

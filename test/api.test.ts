@@ -74,6 +74,15 @@ function fakeService(overrides: Record<string, unknown> = {}): KomariDataService
       count: 1,
       records: [{ client: 'mmwx-0', time: '2026-08-21T00:00:00.000Z', cpu: 1 }],
     }),
+    getMe: async () => ({
+      logged_in: false,
+      username: 'Guest',
+      uuid: '',
+      sso_id: '',
+      sso_type: '',
+      '2fa_enabled': false,
+    }),
+    getPublicInfo: async () => defaultPublicSettings,
     getPublicSettings: async () => defaultPublicSettings,
     getVersion: async () => ({ version: 'v0.0.1', hash: 'test-hash' }),
     ...overrides,
@@ -130,9 +139,16 @@ test('API routes return Komari-compatible public resources', async () => {
     assert.equal(publicInfo.status, 200)
     assert.deepEqual(publicInfo.body, { status: 'success', message: 'success', data: defaultPublicSettings })
 
-    const me = await request(baseUrl, '/api/me')
-    assert.equal(me.status, 200)
-    assert.deepEqual(me.body, { logged_in: false })
+  const me = await request(baseUrl, '/api/me')
+  assert.equal(me.status, 200)
+  assert.deepEqual(me.body, {
+    logged_in: false,
+    username: 'Guest',
+    uuid: '',
+    sso_id: '',
+    sso_type: '',
+    '2fa_enabled': false,
+  })
   })
 })
 
@@ -438,19 +454,7 @@ test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-not
     online: true,
     uptime: 123456,
   }
-  const recent = [{
-    uuid: node.uuid,
-    cpu: { usage: 12.5 },
-    ram: { used: 3 * 1024 ** 3, total: 8 * 1024 ** 3 },
-    swap: { used: 128 * 1024 ** 2, total: 2 * 1024 ** 3 },
-    load: { load1: 0.42, load5: 0.3, load15: 0.2 },
-    disk: { used: 20 * 1024 ** 3, total: 50 * 1024 ** 3 },
-    network: { up: 2048, down: 1024, totalUp: 111, totalDown: 222 },
-    connections: { tcp: 24, udp: 2 },
-    uptime: 123456,
-    process: 88,
-    updated_at: '2026-08-21T12:00:00.000Z',
-  }]
+  const recent = [status]
   const loadRecords = {
     count: 1,
     records: [{
@@ -520,6 +524,7 @@ test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-not
   await withApi(fakeService({
     getNodesInformation: async () => [node],
     getPublicSettings: async () => settings,
+    getPublicInfo: async () => settings,
     getNodesLatestStatus: async () => ({ [node.uuid]: status }),
     getNodeRecentStatus: async () => ({ count: 1, records: [recent[0]] }),
     getClientRecentRecords: async () => recent,
@@ -534,54 +539,75 @@ test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-not
     assert.equal(nodes.status, 200)
     assert.deepEqual(nodes.body, { jsonrpc: '2.0', id: 10, result: [node] })
 
+    const meResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'common:getMe' }),
+    })
+    assert.equal(meResp.status, 200)
+    assert.deepEqual(meResp.body, { jsonrpc: '2.0', id: 11, result: { logged_in: false, username: 'Guest', uuid: '', sso_id: '', sso_type: '', '2fa_enabled': false } })
+
+    const publicMeResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'public:getMe' }),
+    })
+    assert.equal(publicMeResp.status, 200)
+    assert.deepEqual(publicMeResp.body, { jsonrpc: '2.0', id: 12, result: { logged_in: false, username: 'Guest', uuid: '', sso_id: '', sso_type: '', '2fa_enabled': false } })
+
+    const publicInfoResp = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'common:getPublicInfo' }),
+    })
+    assert.equal(publicInfoResp.status, 200)
+    assert.deepEqual(publicInfoResp.body, { jsonrpc: '2.0', id: 13, result: settings })
+
     const statusResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'common:getNodesLatestStatus' }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 14, method: 'common:getNodesLatestStatus' }),
     })
     assert.equal(statusResp.status, 200)
-    assert.deepEqual(statusResp.body, { jsonrpc: '2.0', id: 11, result: { [node.uuid]: status } })
+    assert.deepEqual(statusResp.body, { jsonrpc: '2.0', id: 14, result: { [node.uuid]: status } })
 
     const recentStatusResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'common:getNodeRecentStatus', params: { uuid: node.uuid } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 15, method: 'common:getNodeRecentStatus', params: { uuid: node.uuid } }),
     })
     assert.equal(recentStatusResp.status, 200)
-    assert.deepEqual(recentStatusResp.body, { jsonrpc: '2.0', id: 12, result: { count: 1, records: [recent[0]] } })
+    assert.deepEqual(recentStatusResp.body, { jsonrpc: '2.0', id: 15, result: { count: 1, records: [recent[0]] } })
 
     const recentResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'public:getClientRecentRecords' }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 16, method: 'public:getClientRecentRecords', params: { uuid: node.uuid } }),
     })
     assert.equal(recentResp.status, 200)
-    assert.deepEqual(recentResp.body, { jsonrpc: '2.0', id: 13, result: recent })
+    assert.deepEqual(recentResp.body, { jsonrpc: '2.0', id: 16, result: recent })
 
     const settingsResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 14, method: 'public:getPublicSettings' }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 17, method: 'public:getPublicSettings' }),
     })
     assert.equal(settingsResp.status, 200)
-    assert.deepEqual(settingsResp.body, { jsonrpc: '2.0', id: 14, result: settings })
+    assert.deepEqual(settingsResp.body, { jsonrpc: '2.0', id: 17, result: settings })
 
     const versionResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 15, method: 'public:getVersion' }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 18, method: 'public:getVersion' }),
     })
     assert.equal(versionResp.status, 200)
-    assert.deepEqual(versionResp.body, { jsonrpc: '2.0', id: 15, result: { version: 'v0.2.0', hash: 'deadbee' } })
+    assert.deepEqual(versionResp.body, { jsonrpc: '2.0', id: 18, result: { version: 'v0.2.0', hash: 'deadbee' } })
 
     const loadResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 16, method: 'public:getRecordsByUUID', params: { uuid: node.uuid, load_type: 'all', hours: '24' } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 19, method: 'public:getRecordsByUUID', params: { uuid: node.uuid, load_type: 'all', hours: '24' } }),
     })
     assert.equal(loadResp.status, 200)
-    assert.deepEqual(loadResp.body, { jsonrpc: '2.0', id: 16, result: loadRecords })
+    assert.deepEqual(loadResp.body, { jsonrpc: '2.0', id: 19, result: loadRecords })
 
     const pingResp = await request(baseUrl, '/api/rpc2', {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 17, method: 'public:getPingRecords', params: { uuid: node.uuid, hours: '24' } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'public:getPingRecords', params: { uuid: node.uuid, hours: '24' } }),
     })
     assert.equal(pingResp.status, 200)
-    assert.deepEqual(pingResp.body, { jsonrpc: '2.0', id: 17, result: pingRecords })
+    assert.deepEqual(pingResp.body, { jsonrpc: '2.0', id: 20, result: pingRecords })
   })
 })
 

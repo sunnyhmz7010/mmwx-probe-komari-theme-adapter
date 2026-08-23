@@ -64,28 +64,18 @@ export interface KomariNodeStatus {
 
 export type KomariNodeStatusMap = Record<string, KomariNodeStatus>
 
-export interface KomariRecentReport {
-  uuid: string
-  cpu?: { usage?: number }
-  ram?: { total?: number; used?: number }
-  swap?: { total?: number; used?: number }
-  load?: { load1?: number; load5?: number; load15?: number }
-  disk?: { total?: number; used?: number }
-  network?: {
-    up?: number
-    down?: number
-    totalUp?: number
-    totalDown?: number
-  }
-  connections?: { tcp?: number; udp?: number }
-  uptime?: number
-  process?: number
-  updated_at: string
-}
-
 export interface KomariRecentStatusResp {
   count: number
-  records: KomariRecentReport[]
+  records: KomariNodeStatus[]
+}
+
+export interface KomariMeInfo {
+  logged_in: boolean
+  username: string
+  uuid: string
+  sso_id: string
+  sso_type: string
+  '2fa_enabled': boolean
 }
 
 export interface KomariPublicSettings {

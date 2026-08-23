@@ -8,7 +8,6 @@ import type {
   KomariNodeStatus,
   KomariNodeStatusMap,
   KomariPublicNode,
-  KomariRecentReport,
   KomariRecord,
   KomariPingRecord,
   KomariPingRecordTask,
@@ -440,28 +439,8 @@ export function toKomariNodeStatus(server: ProbeServer, index: number, now = new
   return status
 }
 
-export function toKomariRecentReports(payload: ProbePayload, now = new Date()): KomariRecentReport[] {
-  return payload.servers.map((server, index) => {
-    const status = toKomariNodeStatus(server, index, now)
-    return {
-      uuid: status.client,
-      cpu: { usage: status.cpu },
-      ram: { used: status.ram, total: status.ram_total },
-      swap: { used: status.swap, total: status.swap_total },
-      load: { load1: status.load, load5: status.load5, load15: status.load15 },
-      disk: { used: status.disk, total: status.disk_total },
-      network: {
-        up: status.net_out,
-        down: status.net_in,
-        totalUp: status.net_total_up,
-        totalDown: status.net_total_down,
-      },
-      connections: { tcp: status.connections, udp: status.connections_udp },
-      uptime: status.uptime,
-      process: status.process,
-      updated_at: status.time,
-    }
-  })
+export function toKomariRecentStatusRecords(payload: ProbePayload, now = new Date()): KomariNodeStatus[] {
+  return payload.servers.map((server, index) => toKomariNodeStatus(server, index, now))
 }
 
 function enrichLoadRecord(record: LoadHistoryRecord): KomariLoadRecord {
