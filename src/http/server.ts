@@ -168,7 +168,7 @@ function adminThemeSettingsHtml(theme: LoadedTheme): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MMWX Probe Komari Theme Adapter Settings</title>
+<title>MMWX 探针 Komari 主题适配器 - 设置</title>
 <style>
 :root{--bg:#eef2f7;--card:#fff;--ink:#0f172a;--muted:#64748b;--brand:#2563eb;--brand-2:#1d4ed8;--border:#e2e8f0;--accent:#6366f1}
 *{box-sizing:border-box}
@@ -217,7 +217,7 @@ textarea{min-height:110px;resize:vertical}
 <body>
 <div class="wrap">
 <header>
-<h1>MMWX Probe Komari Theme Adapter Settings</h1>
+<h1>MMWX 探针 Komari 主题适配器 - 设置</h1>
 <div class="meta">
 <span>当前主题：<b>${title}</b></span>
 <span>仓库：<a href="${htmlEscape(repoUrl)}" target="_blank" rel="noreferrer">${htmlEscape(repoDisplay)}</a> @ ${htmlEscape(theme.source.ref)}</span>
@@ -245,7 +245,7 @@ function renderField(f,settings){
  else if(f.type==="select"||f.type==="radio"){control='<label>'+name+'</label><select data-key="'+html(f.key)+'" data-type="value">'+parseOptions(f.options).map((o)=>{const ov=typeof o==="object"?(o.value??o.key??o.label??o.name):o;return '<option value="'+html(ov)+'" '+(String(value)===String(ov)?"selected":"")+'>'+html(typeof o==="object"?label(o.label??o.name)||ov:o)+'</option>'}).join("")+'</select>'}
  else if(f.type==="number"||f.type==="integer"||f.type==="slider"){control='<label>'+name+'</label><input data-key="'+html(f.key)+'" data-type="number" type="number" value="'+html(value??0)+'">'}
  else if(f.type==="richtext"||f.type==="nodes"||f.type==="pingtasks"){control='<label>'+name+'</label><textarea data-key="'+html(f.key)+'" data-type="'+(f.type==="richtext"?"value":"json")+'">'+html(f.type==="richtext"?(value??""):JSON.stringify(value??[]))+'</textarea>'}
- else{control='<label>'+name+'</label><input data-key="'+html(f.key)+'" data-type="value" value="'+html(value??"")+'">'}
+ else{control='<label>'+name+'</label><input type="text" data-key="'+html(f.key)+'" data-type="value" value="'+html(value??"")+'">'}
  return '<div class="field">'+control+(help?'<p class="hint">'+html(help)+'</p>':"")+'</div>';
 }
 function collect(){

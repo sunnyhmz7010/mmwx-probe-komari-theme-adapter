@@ -121,7 +121,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
         }
 
         if (url.pathname === '/api/admin/theme/settings' && request.method === 'POST') {
-          if (!options.adminToken) return json(response, 403, envelope(null, 'admin theme settings are disabled', 'error'))
+          if (!options.adminToken) return json(response, 403, envelope(null, '未配置 ADMIN_TOKEN，主题设置已禁用', 'error'))
           if (!hasAdminToken(request, options.adminToken)) return json(response, 401, envelope(null, 'unauthorized', 'error'))
           const body = await readJsonObject(request)
           return json(response, 200, envelope(await service.updateThemeSettings(body)))
