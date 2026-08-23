@@ -450,8 +450,9 @@ export class KomariDataService {
     return includeHidden ? nodes : nodes.filter((node) => !node.hidden)
   }
 
-  public async getNodes(): Promise<Record<string, KomariPublicNode>> {
-    const nodes = await this.getNodesInformation(true)
+  public async getNodes(uuid?: string): Promise<Record<string, KomariPublicNode> | KomariPublicNode | null> {
+    const nodes = await this.getNodesInformation()
+    if (uuid !== undefined) return nodes.find((node) => node.uuid === uuid) ?? null
     return Object.fromEntries(nodes.map((node) => [node.uuid, node]))
   }
 
@@ -496,6 +497,7 @@ export class KomariDataService {
       oauth_enable: false,
       oauth_provider: '',
       disable_password_login: false,
+      allow_cors: true,
       cors_origin_check_enabled: true,
       visitor_audit_enabled: false,
     }
@@ -517,9 +519,11 @@ export class KomariDataService {
     return records.filter((record) => wanted.has(record.client))
   }
 
-  public async getNodeRecentStatus(uuid: string): Promise<KomariRecentStatusResp> {
+  public async getNodeRecentStatus(uuid: string, limit?: number): Promise<KomariRecentStatusResp> {
     const records = await this.getClientRecentRecords({ uuid })
-    return { count: records.length, records }
+    const normalizedLimit = typeof limit === 'number' && Number.isFinite(limit) ? Math.max(0, Math.trunc(limit)) : undefined
+    const limited = normalizedLimit === undefined ? records : records.slice(-normalizedLimit)
+    return { count: limited.length, records: limited }
   }
 
   public async getVersion(): Promise<KomariVersionInfo> {
@@ -545,8 +549,16 @@ export class KomariDataService {
       }
     }
 
-    const uuid = resolveEntityUuid(query)
-    const history = await this.getLoadHistory(uuid, query)
+    const entityIds = await this.resolveEntityIdsOrAll(query)
+    const histories = await Promise.all(entityIds.map((entityId) => this.getLoadHistory(entityId, query)))
+    const history: LoadHistory = {
+      count: histories.reduce((count, item) => count + item.count, 0),
+      records: histories.flatMap((item) => item.records).sort((left, right) => {
+        const timeDiff = Date.parse(left.time) - Date.parse(right.time)
+        if (timeDiff !== 0) return timeDiff
+        return left.client.localeCompare(right.client)
+      }),
+    }
     return {
       ...toKomariLoadRecords(history),
       ...historyRange(query),
@@ -613,7 +625,13 @@ export class KomariDataService {
   }
 
   public async getPingHistory(query: SeriesQuery): Promise<PingHistory> {
-    const index = serverIndexFromQuery(query)
+    const entityIds = await this.resolveEntityIdsOrAll(query)
+    const histories = await Promise.all(entityIds.map((entityId) => this.getPingHistoryForUuid(entityId, query)))
+    return mergePingHistories(histories)
+  }
+
+  private async getPingHistoryForUuid(uuid: string, query: SeriesQuery): Promise<PingHistory> {
+    const index = serverIndexFromUuid(uuid)
     const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), all: '1' }))
     if (payload.pings || payload.all_series || payload.series) return toPingSeriesHistory(payload, index)
     return { count: 0, records: [], tasks: [], basic_info: { clients: [] } }
@@ -837,12 +855,27 @@ function seriesBounds(series: readonly KomariMetricSeries[]): { start?: string; 
 
 function mergePingHistories(histories: readonly PingHistory[]): PingHistory {
   const records = histories.flatMap((history) => history.records)
-  const tasks = histories.flatMap((history) => history.tasks)
+  const tasksByKey = new Map<string, PingHistory['tasks'][number]>()
+  for (const task of histories.flatMap((history) => history.tasks)) {
+    const key = `${task.id}:${task.name}`
+    const existing = tasksByKey.get(key)
+    if (!existing) {
+      tasksByKey.set(key, { ...task, clients: [...task.clients] })
+      continue
+    }
+    existing.clients = [...new Set([...existing.clients, ...task.clients])].sort()
+  }
+  records.sort((left, right) => {
+    const timeDiff = Date.parse(left.time) - Date.parse(right.time)
+    if (timeDiff !== 0) return timeDiff
+    if (left.task_id !== right.task_id) return left.task_id - right.task_id
+    return left.client.localeCompare(right.client)
+  })
   const clients = [...new Set(histories.flatMap((history) => history.basic_info.clients))].sort()
   return {
     count: records.length,
     records,
-    tasks,
+    tasks: [...tasksByKey.values()],
     basic_info: { clients },
   }
 }

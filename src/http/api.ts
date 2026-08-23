@@ -20,6 +20,84 @@ interface JsonRpcRequest {
   params?: SeriesQuery
 }
 
+interface RpcMethodHelp {
+  name: string
+  summary: string
+  description: string
+  params: Array<{ name: string; type: string; description: string }>
+  returns: string
+}
+
+const RPC_METHOD_HELP: Record<string, RpcMethodHelp> = {
+  'common:getNodes': {
+    name: 'common:getNodes',
+    summary: '获取节点信息',
+    description: '获取所有可见节点的 Komari 客户端信息。',
+    params: [],
+    returns: 'Record<string, Client>',
+  },
+  'common:getNodesLatestStatus': {
+    name: 'common:getNodesLatestStatus',
+    summary: '获取节点最新状态',
+    description: '获取所有可见节点的最新运行状态。',
+    params: [],
+    returns: 'Record<string, NodeStatus>',
+  },
+  'common:getNodeRecentStatus': {
+    name: 'common:getNodeRecentStatus',
+    summary: '获取节点最近状态',
+    description: '获取指定节点的最近状态记录。',
+    params: [{ name: 'uuid', type: 'string', description: '节点 UUID' }],
+    returns: '{ count: number; records: StatusRecord[] }',
+  },
+  'common:getPublicInfo': {
+    name: 'common:getPublicInfo',
+    summary: '获取公开站点信息',
+    description: '获取公开站点设置与主题配置。',
+    params: [],
+    returns: 'PublicInfo',
+  },
+  'common:getBackendVersion': {
+    name: 'common:getBackendVersion',
+    summary: '获取后端版本',
+    description: '获取适配器后端版本与构建哈希。',
+    params: [],
+    returns: 'VersionInfo',
+  },
+  'common:getMe': {
+    name: 'common:getMe',
+    summary: '获取当前用户',
+    description: '获取当前访问者的登录状态。',
+    params: [],
+    returns: 'MeInfo',
+  },
+  'common:getRecords': {
+    name: 'common:getRecords',
+    summary: '获取历史记录',
+    description: '获取节点负载或 Ping 历史记录。',
+    params: [{ name: 'type', type: 'string', description: 'load 或 ping' }],
+    returns: 'RecordsResponse',
+  },
+}
+
+const RPC_METHODS = [
+  'rpc.ping',
+  'rpc.getMethods',
+  'rpc.getHelp',
+  'rpc.getVersion',
+  ...Object.keys(RPC_METHOD_HELP),
+  'public:getMe',
+  'public:getNodesInformation',
+  'public:getClientRecentRecords',
+  'public:getPublicInfo',
+  'public:getVersion',
+  'public:getPingRecords',
+  'public:getRecordsByUUID',
+  'public:queryMetrics',
+  'public:getPingMetricStats',
+  'public:getPublicPingTasks',
+]
+
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'X-Content-Type-Options': 'nosniff',
@@ -153,6 +231,18 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
   const params = rpc.params ?? {}
   try {
     if (rpc.method === 'rpc.ping') return rpcResult(id, 'pong')
+    if (rpc.method === 'rpc.getMethods') return rpcResult(id, RPC_METHODS)
+    if (rpc.method === 'rpc.getHelp') {
+      const method = typeof params.method === 'string' ? params.method : undefined
+      if (method) {
+        const help = RPC_METHOD_HELP[method]
+        return help ? rpcResult(id, help) : rpcError(id, -32601, 'Method not found')
+      }
+      return rpcResult(id, Object.values(RPC_METHOD_HELP))
+    }
+    if (rpc.method === 'rpc.getVersion' || rpc.method === 'common:getBackendVersion') {
+      return rpcResult(id, await service.getVersion())
+    }
     if (rpc.method === 'common:getMe' || rpc.method === 'public:getMe') {
       return rpcResult(id, await service.getMe())
     }
@@ -170,14 +260,15 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
       return rpcResult(id, await service.getPublicSettings())
     }
     if (rpc.method === 'common:getNodes') {
-      return rpcResult(id, await service.getNodes())
+      return rpcResult(id, await service.getNodes(typeof params.uuid === 'string' ? params.uuid : undefined))
     }
     if (rpc.method === 'common:getNodesLatestStatus') {
       return rpcResult(id, await service.getNodesLatestStatus(params))
     }
     if (rpc.method === 'common:getNodeRecentStatus') {
       if (typeof params.uuid !== 'string' || !params.uuid) return rpcError(id, -32602, 'Invalid params')
-      return rpcResult(id, await service.getNodeRecentStatus(params.uuid))
+      const limit = typeof params.limit === 'number' ? params.limit : undefined
+      return rpcResult(id, await service.getNodeRecentStatus(params.uuid, limit))
     }
     if (rpc.method === 'public:getClientRecentRecords') {
       return rpcResult(id, await service.getClientRecentRecords(params))

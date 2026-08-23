@@ -1,6 +1,6 @@
 <div align="center">
   <h1>MMWX Probe Komari Theme Adapter</h1>
-  <p>将已部署支持独立探针访问密钥的妙妙屋 X 主控，转换为 Komari 主题可直接读取的只读探针前端。</p>
+  <p>将 MMWX 探针代理、Komari 兼容转换和主题加载放在同一容器里，对外提供可直接访问的只读主题页面。</p>
 </div>
 
 <p align="center">
@@ -12,14 +12,20 @@
 
 ## ✨ 为什么做这个项目
 
-妙妙屋 X 主控已经提供独立探针接口，但直接暴露主控域名和访问密钥并不适合公开展示。这个容器把固定的探针接口、WebSocket 实时流和 Komari 主题页面放在同一个对外地址下：访客只访问容器暴露的探针域名，容器再携带 `PROBE_TOKEN` 请求妙妙屋 X 主控。
+MMWX 探针已经提供稳定的原始数据接口，但直接暴露主控域名和访问密钥并不适合公开展示。这个容器把固定的探针代理、WebSocket 实时流、Komari 兼容转换和主题页面放在同一个对外地址下：访客只访问容器暴露的探针域名，容器再携带 `PROBE_TOKEN` 请求主控。
 
-它适合已经部署支持独立探针访问密钥的妙妙屋 X 主控，又希望用 Docker 快速部署公开探针页面、复用 Komari 主题展示效果的场景。
+它适合已经部署独立探针的主控，又希望用 Docker 快速部署公开探针页面、复用 Komari 主题展示效果的场景。
+
+## ⚠️ 免责声明
+
+- 本项目与 Komari 官方项目无关，也不代表 Komari 官方立场
+- 本项目与妙妙屋 X 主控的原作者、维护者或运营方无关
+- 这里的“Komari 兼容”只表示 API 形状兼容，不表示上游项目关系或授权关系
 
 ## 🚀 核心能力
 
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
-- Komari 公开只读兼容层：基于标准探针数据转换出常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
+- Komari 公开只读兼容层：基于标准探针数据做结构转换，生成常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
 - 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin/settings/theme` 轻量配置页，并将配置保存到 `/data/theme-settings.json`
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
@@ -52,7 +58,7 @@ services:
     environment:
       - MMWX_ORIGIN=https://panel.example.com
       - PROBE_TOKEN=replace-with-probe-token
-      - THEME_REPO=https://github.com/stqfdyr/komari-theme-adhesive-note
+      - THEME_REPO=
       - THEME_REF=main
       - PORT=8080
       - CACHE_TTL=5
@@ -83,7 +89,7 @@ docker run -d \
   -p 8080:8080 \
   -e MMWX_ORIGIN="https://panel.example.com" \
   -e PROBE_TOKEN="replace-with-probe-token" \
-  -e THEME_REPO="https://github.com/stqfdyr/komari-theme-adhesive-note" \
+  -e THEME_REPO="" \
   -e THEME_REF="main" \
   -e PORT=8080 \
   -e CACHE_TTL=5 \
@@ -155,6 +161,12 @@ docker run -d \
 已支持的只读 RPC2 方法：
 
 - `rpc.ping`
+- `rpc.getMethods`
+- `rpc.getHelp`
+- `rpc.getVersion`
+- `common:getBackendVersion`
+- `common:getMe`
+- `common:getPublicInfo`
 - `public:getNodesInformation`
 - `public:getPublicSettings`
 - `common:getNodes`
@@ -171,25 +183,10 @@ docker run -d \
 - `records.ping`
 - `records.load`
 
-`public:queryMetrics` 的返回结构为：
+Komari 兼容层当前遵循两条固定转换规则：
 
-```json
-{
-  "start": "2026-08-21T00:00:00.000Z",
-  "end": "2026-08-21T12:00:00.000Z",
-  "count": 3,
-  "series": [
-    {
-      "metric_key": "cpu.usage",
-      "entity_id": "mmwx-0",
-      "interval_seconds": 300,
-      "points": [
-        { "time": "2026-08-21T12:00:00.000Z", "value": 12.5, "count": 1 }
-      ]
-    }
-  ]
-}
-```
+- 原始探针结构只从 MMWX 拉取一次，再映射成 Komari 需要的节点、状态、历史和公共设置
+- 未指定 `uuid` 的 Ping / 负载历史请求会聚合全部可见节点，不再只返回第一个节点
 
 `common:getRecords` 会按 `type` 兼容两类返回：
 
@@ -228,13 +225,31 @@ http://localhost:8080/admin/settings/theme
 
 没有 `configuration` 的主题会显示“当前主题未声明可配置项”，并提供高级 JSON 编辑入口。
 
+### 🧪 已实测主题仓库
+
+| 主题仓库 | 状态 | 备注 |
+| --- | --- | --- |
+| `https://github.com/jianmomo/komari-theme-Glassmorphism-Enhanced` | ✅ | 直接读取 `komari-theme.json`，支持管理型配置页 |
+| `https://github.com/vaspike/junimo` | ✅ | 直接读取 `komari-theme.json`，支持公开前台 |
+| `https://github.com/sunnyhmz7010/komari-theme-adhesive-note` | ✅ | 直接读取 `komari-theme.json`，支持公开前台 |
+
+### ✅❌ 功能支持矩阵
+
+| 功能 | 状态 | 说明 |
+| --- | --- | --- |
+| 原始探针代理 `/api/probe`、`/api/series`、`/api/stream` | ✅ | 只做透传和必要的 token 转发 |
+| Komari 兼容 RPC2 | ✅ | 提供只读方法和固定返回结构 |
+| 多节点 Ping / 负载聚合 | ✅ | 未指定 `uuid` 时聚合全部可见节点 |
+| 登录、写入、节点修改 | ❌ | 明确不在兼容范围内 |
+| 直接暴露上游地址 | ❌ | 不允许访客指定任意上游 |
+
 ### 📋 环境变量
 
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `MMWX_ORIGIN` | 是 | - | 妙妙屋 X 主控地址。生产环境必须使用 HTTPS；仅 `localhost` 和 `127.0.0.1` 允许 HTTP |
 | `PROBE_TOKEN` | 是 | - | 主控“系统设置 → 探针”生成的独立探针访问密钥，仅作为 `X-MMwx-Probe-Token` 转发给主控 |
-| `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/stqfdyr/komari-theme-adhesive-note` |
+| `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/<owner>/<repo>` |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
 | `THEME_BUILD` | 否 | - | 自定义主题构建命令；未设置时使用主题仓库 `package.json` 中的 `build` 脚本 |
 | `PORT` | 否 | `8080` | 容器内 HTTP 监听端口 |
@@ -274,16 +289,16 @@ docker compose logs -f mmwx-komari-adapter
 
 ## 🧠 功能细节
 
-- 固定上游路径：HTTP 探针数据只请求 `/api/public/probe-servers` 和 `/api/public/probe-series`，实时流只请求 `/api/public/probe-ws`
-- 查询参数透传：`/api/series` 会透传 `hours`、`metric` 等查询参数，但不会允许访客覆盖主控地址
-- 历史数据映射：Komari 的 `/api/records/ping` 和 `/api/records/load` 会把 `uuid=mmwx-0`、`hours=24` 转换为主控需要的 `server=0`、`range=24h`，其中系统指标固定追加 `metric=system`
-- 主题 RPC 映射：`common:getNodes`、`common:getRecords`、`public:queryMetrics`、`public:getPingMetricStats`、`public:getPublicPingTasks` 都会从同一份探针快照和历史序列生成只读结果，避免主题直接依赖主控后台
-- 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`；构建命令失败时仅接受已生成的标准输出目录，不会把源码根目录 `index.html` 当作构建产物
+- 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做 MMWX 代理，不改写路径、状态码和流式行为
+- 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
+- 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
+- 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
+- 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成
+- 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
 - 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；保存操作必须携带 `ADMIN_TOKEN`
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程
 - 输出校验：构建产物必须包含 `index.html`，并通过路径包含性和符号链接检查防止目录逃逸
-- 数据缓存：探针快照和历史序列按 `CACHE_TTL` 短缓存，降低主题高频刷新对主控的压力
 
 ## 🧱 技术栈
 

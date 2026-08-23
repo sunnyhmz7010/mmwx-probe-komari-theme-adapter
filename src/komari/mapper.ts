@@ -387,7 +387,7 @@ export function toKomariPublicNodes(payload: ProbePayload, now = new Date()): Ko
     traffic_limit_type: trafficLimitType(server),
     created_at: dateTimeOrDefault(server.created_at, now),
     updated_at: dateTimeOrDefault(server.updated_at, now),
-    public_remark: publicRemark(server),
+    public_remark: publicRemark(server) ?? '',
   }))
 }
 

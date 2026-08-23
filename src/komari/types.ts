@@ -31,7 +31,7 @@ export interface KomariPublicNode {
   traffic_limit_type: string
   created_at: string
   updated_at: string
-  public_remark?: string
+  public_remark: string
 }
 
 export interface KomariNodeStatus {
@@ -92,6 +92,7 @@ export interface KomariPublicSettings {
   oauth_enable: boolean
   oauth_provider: string
   disable_password_login: boolean
+  allow_cors: boolean
   cors_origin_check_enabled: boolean
   visitor_audit_enabled: boolean
 }

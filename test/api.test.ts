@@ -611,6 +611,104 @@ test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-not
   })
 })
 
+test('Komari common ping records aggregate every node when uuid is omitted', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [{ name: 'node-0' }, { name: 'node-1' }] }),
+    fetchSeries: async (query: SeriesQuery) => ({
+      success: true,
+      bucket_sec: 300,
+      generated_at: 1787313000,
+      all_series: [{
+        key: 'google',
+        label: 'Google',
+        buckets: [{ ms: Number(query.server) + 10, loss: 0 }],
+      }],
+    }),
+  }, 1000)
+
+  const records = await service.getRecords({ type: 'ping', hours: '1' })
+
+  assert.equal(records.count, 2)
+  assert.deepEqual(records.records.map((record) => [record.client, 'value' in record ? record.value : undefined]), [
+    ['mmwx-0', 10],
+    ['mmwx-1', 11],
+  ])
+})
+
+test('RPC2 exposes Komari built-in discovery and backend version aliases', async () => {
+  await withApi(fakeService(), async (baseUrl) => {
+    const methods = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'rpc.getMethods', params: { internal: true } }),
+    })
+    assert.equal(methods.status, 200)
+    assert.ok(Array.isArray((methods.body as { result?: unknown }).result))
+    assert.ok(((methods.body as { result: string[] }).result).includes('common:getNodes'))
+    assert.ok(((methods.body as { result: string[] }).result).includes('common:getBackendVersion'))
+
+    const help = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 21, method: 'rpc.getHelp', params: { method: 'common:getNodes' } }),
+    })
+    assert.equal(help.status, 200)
+    assert.deepEqual((help.body as { result?: unknown }).result, {
+      name: 'common:getNodes',
+      summary: '获取节点信息',
+      description: '获取所有可见节点的 Komari 客户端信息。',
+      params: [],
+      returns: 'Record<string, Client>',
+    })
+
+    const version = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 22, method: 'common:getBackendVersion' }),
+    })
+    assert.equal(version.status, 200)
+    assert.deepEqual(version.body, {
+      jsonrpc: '2.0',
+      id: 22,
+      result: { version: 'v0.0.1', hash: 'test-hash' },
+    })
+  })
+})
+
+test('RPC2 supports node filtering and recent-status limits', async () => {
+  const nodes = {
+    'mmwx-0': { uuid: 'mmwx-0', name: 'node-0' },
+    'mmwx-1': { uuid: 'mmwx-1', name: 'node-1' },
+  }
+  const statuses = {
+    'mmwx-0': { client: 'mmwx-0', time: '2026-08-21T00:00:00.000Z' },
+    'mmwx-1': { client: 'mmwx-1', time: '2026-08-21T00:00:00.000Z' },
+  }
+  await withApi(fakeService({
+    getNodes: async (uuid?: string) => uuid ? nodes[uuid as keyof typeof nodes] ?? null : nodes,
+    getNodesLatestStatus: async (query: SeriesQuery = {}) => query.uuid === 'mmwx-1' ? { 'mmwx-1': statuses['mmwx-1'] } : statuses,
+    getNodeRecentStatus: async (_uuid: string, limit?: number) => ({
+      count: limit === 1 ? 1 : 2,
+      records: limit === 1 ? [statuses['mmwx-0']] : [statuses['mmwx-0'], statuses['mmwx-1']],
+    }),
+  }), async (baseUrl) => {
+    const node = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 23, method: 'common:getNodes', params: { uuid: 'mmwx-1' } }),
+    })
+    assert.deepEqual(node.body, { jsonrpc: '2.0', id: 23, result: { uuid: 'mmwx-1', name: 'node-1' } })
+
+    const status = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 24, method: 'common:getNodesLatestStatus', params: { uuid: 'mmwx-1' } }),
+    })
+    assert.deepEqual(status.body, { jsonrpc: '2.0', id: 24, result: { 'mmwx-1': statuses['mmwx-1'] } })
+
+    const recent = await request(baseUrl, '/api/rpc2', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 25, method: 'common:getNodeRecentStatus', params: { uuid: 'mmwx-0', limit: 1 } }),
+    })
+    assert.deepEqual(recent.body, { jsonrpc: '2.0', id: 25, result: { count: 1, records: [statuses['mmwx-0']] } })
+  })
+})
+
 test('RPC2 supports Junimo metric and common compatibility methods', async () => {
   const node = {
     uuid: 'mmwx-0',

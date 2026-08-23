@@ -443,6 +443,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
     oauth_enable: false,
     oauth_provider: '',
     disable_password_login: false,
+    allow_cors: true,
     cors_origin_check_enabled: true,
     visitor_audit_enabled: false,
   })
