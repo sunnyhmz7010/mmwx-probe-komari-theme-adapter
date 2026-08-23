@@ -185,7 +185,7 @@ http://localhost:8080/admin
 
 | 仓库地址 | 仓库分支 | 页面显示 | 数据兼容性 | 主题配置 |
 | --- | :---: | :---: | --- | --- |
-| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | 待测试 | 待测试 |
+| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
 | `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
