@@ -12,7 +12,7 @@
 
 ## ✨ 为什么做这个项目
 
-MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API 代理和 WebSocket 代理，但内置主题有限。本项目通过 Komari 兼容转换层，让 妙妙屋 X 探针数据可以驱动 Komari 生态中的丰富主题，并把固定的探针代理、WebSocket 实时流和主题页面整合到同一个对外地址下，访客只接触探针域名，无需直接访问主控域名。
+MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API 代理和 WebSocket 代理，但内置主题有限。本项目通过 Komari 兼容转换层，让妙妙屋 X 探针数据可以驱动 Komari 生态中的丰富主题，并把固定的探针代理、WebSocket 实时流和主题页面整合到同一个对外地址下，访客只接触探针域名，无需直接访问主控域名。
 
 它适合已经部署独立探针的主控，又希望用 Docker 快速部署公开探针页面、复用 Komari 主题展示效果的场景。
 
@@ -39,7 +39,6 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 
 - 已部署支持独立探针访问密钥的妙妙屋 X 主控
 - 主控具有可由容器访问的 HTTPS 地址
-- 已在主控“系统设置 → 探针”中启用探针、选择展示服务器和指标，并生成“独立探针访问密钥”
 - 一台能访问妙妙屋 X 主控和 GitHub 的 VPS、NAS 或本地 Docker 环境
 - Docker 与 Docker Compose
 - 一个可公开拉取的 Komari 主题 GitHub 仓库
@@ -117,7 +116,7 @@ docker run -d \
 
 ## 📖 使用说明
 
-### 📡 妙妙屋 X 主控探针代理
+### 📡 妙妙屋 X 主控代理
 
 ```text
 浏览器 ──HTTP/WS──> Docker 容器 ──携带 PROBE_TOKEN──> 妙妙屋 X 主控
@@ -169,18 +168,6 @@ docker run -d \
 - `records.ping`
 - `records.load`
 
-Komari 兼容层当前遵循两条固定转换规则：
-
-- 原始探针结构只从 MMWX 拉取一次，再映射成 Komari 需要的节点、状态、历史和公共设置
-- 未指定 `uuid` 的 Ping / 负载历史请求会聚合全部可见节点，不再只返回第一个节点
-
-`common:getRecords` 会按 `type` 兼容两类返回：
-
-- `type=load`：返回负载、内存、磁盘和网络统计记录
-- `type=ping`：返回 Ping 记录、任务列表和客户端列表
-
-登录、后台管理、主题管理、节点修改等写操作不在兼容范围内。
-
 ### 🎨 主题配置
 
 容器会读取当前主题仓库根目录的 `komari-theme.json`。如果主题声明了 `configuration`，可以打开：
@@ -189,7 +176,7 @@ Komari 兼容层当前遵循两条固定转换规则：
 http://localhost:8080/admin/settings/theme
 ```
 
-页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
+页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
 
 没有 `configuration` 的主题会显示“当前主题未声明可配置项”，并提供高级 JSON 编辑入口。
 
@@ -217,37 +204,9 @@ http://localhost:8080/admin/settings/theme
 | `THEME_SETTINGS_FILE` | 否 | `/data/theme-settings.json` | 主题配置持久化 JSON 文件路径 |
 | `THEME_SETTINGS_JSON` | 否 | - | 主题配置 JSON 对象，会覆盖文件配置，适合 Docker 环境强制指定少量设置 |
 
-### 📜 日志与数据持久化
-
-```bash
-docker compose logs -f
-```
-
-容器启动日志会输出脱敏后的完整解析配置，并实时记录主题仓库拉取、依赖安装、主题构建命令、构建输出、产物发布和失败原因。`PROBE_TOKEN` 只显示为 `[REDACTED]`。
-
-常用查看命令：
-
-```bash
-docker compose logs --tail=200 mmwx-komari-adapter
-docker compose logs -f mmwx-komari-adapter
-```
-
-容器内 `/data` 用于保存当前构建完成的主题目录和 `theme-settings.json`。建议始终挂载 Docker volume，避免容器重建后重复拉取、构建主题或丢失主题配置。
-
-### 🧯 故障排查
-
-- 页面能打开但没有服务器：检查主控探针设置中是否选择了需要展示的服务器，并确认 `PROBE_TOKEN` 与主控生成的密钥一致
-- 页面有服务器但曲线为空：检查 `/api/series` 是否返回数据；系统指标需要请求 `/api/series?metric=system`
-- 页面有服务器但仍为空数据：确认主题依赖的 RPC（尤其是 `common:getNodes`、`common:getRecords`、`public:queryMetrics`）已经返回非空结果
-- `/api/series` 返回 `502`：容器无法从主控 `/api/public/probe-series` 获取历史数据，通常是主控探针历史不可用、密钥不一致、主控地址错误或主控阻断了容器访问
-- `/api/probe` 返回 `502`：容器无法从主控 `/api/public/probe-servers` 获取服务器状态
-- 页面没有实时更新：检查反向代理、防火墙和主控是否允许 WebSocket；路径为 `/api/stream`
-- `MMWX_ORIGIN must use HTTPS`：生产源站不是 HTTPS。本地调试仅允许 `localhost` 或 `127.0.0.1`
-- 主题构建失败：确认 `THEME_REPO` 可以公开拉取，主题仓库包含根目录静态 `index.html`，或包含 `package.json`、构建脚本和受支持锁文件；若构建命令返回非零但已经生成包含 `index.html` 的 `dist`、`build`、`out` 或 `public` 产物，适配器会记录警告并继续启动
-
 ## 🧠 功能细节
 
-- 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做 MMWX 代理，不改写路径、状态码和流式行为
+- 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做妙妙屋 X 主控代理，不改写路径、状态码和流式行为
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
@@ -279,7 +238,6 @@ mmwx-probe-komari-theme-adapter/
 │   └── theme/                   # 主题仓库加载、构建和发布
 ├── test/                        # node:test 单元与兼容性测试
 ├── .github/                     # GitHub Actions 与 Issue 模板
-├── .env.example                 # 环境变量示例
 ├── compose.yaml                 # GHCR 镜像部署示例
 ├── Dockerfile                   # 容器镜像定义
 ├── package.json                 # npm 脚本与依赖声明
