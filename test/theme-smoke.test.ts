@@ -9,6 +9,7 @@ import WebSocket from 'ws'
 import { createApiRouter } from '../src/http/api.js'
 import { createHttpServer } from '../src/http/server.js'
 import { KomariDataService } from '../src/komari/service.js'
+import { ProbeStreamRelay } from '../src/mmwx/stream-relay.js'
 import type { AppConfig } from '../src/config.js'
 import type { LoadedTheme } from '../src/theme/types.js'
 
@@ -26,7 +27,6 @@ const baseConfig: AppConfig = {
   themeRepo: 'https://github.com/acme/theme',
   themeRef: 'main',
   port: 0,
-  cacheTtlMs: 1000,
 }
 
 async function fixture(name: string): Promise<Fixture> {
@@ -66,7 +66,8 @@ async function runObservedFixture(file: string): Promise<void> {
     streamUrl: () => 'ws://127.0.0.1:1/api/public/probe-ws',
     probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
   } as never
-  const service = new KomariDataService(mmwx, 1000)
+  const hub = new ProbeStreamRelay(mmwx)
+  const service = new KomariDataService(hub)
   const api = createApiRouter(service)
   const port = await reservePort()
   const theme: LoadedTheme = {
@@ -74,7 +75,7 @@ async function runObservedFixture(file: string): Promise<void> {
     indexPath: path.join(process.cwd(), 'package.json'),
     source: { repoUrl: 'https://github.com/acme/theme', ref: 'test' },
   }
-  const server = createHttpServer({ ...baseConfig, port }, theme, api, mmwx)
+  const server = createHttpServer({ ...baseConfig, port }, theme, api, hub)
 
   try {
     await server.listen()

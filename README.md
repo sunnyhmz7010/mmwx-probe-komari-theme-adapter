@@ -61,7 +61,6 @@ services:
       - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
       - PORT=8080
-      - CACHE_TTL=5
       - ADMIN_TOKEN=replace-with-random-admin-token
 ```
 
@@ -88,7 +87,6 @@ docker run -d \
   -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
   -e PORT=8080 \
-  -e CACHE_TTL=5 \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
   ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
 ```
@@ -108,7 +106,6 @@ docker run -d \
   -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
   -e PORT=8080 \
-  -e CACHE_TTL=5 \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
   mmwx-komari-adapter
 ```
@@ -129,7 +126,11 @@ docker run -d \
 | --- | --- | --- |
 | `/api/probe` | `/api/public/probe-servers` | 服务器状态（服务器列表中的每个 `servers[]` 对象还会返回当前计费周期的 `daily_traffic`，元素包含 `date`、`uplink`、`downlink` 和 `total`（字节）。周期汇总字段包括 `traffic_used_up`、`traffic_used_down`、`traffic_used_total`，周期边界为 `period_start`（含）和 `period_end`（不含）。兼容字段 `traffic_used` 仍表示按主控服务器统计模式计算的计费用量。） |
 | `/api/series` | `/api/public/probe-series` | 24 小时延迟、丢包率及系统指标历史；追加 `metric=system` 获取 CPU、内存、网速和累计流量序列 |
-| `/api/stream` | `/api/public/probe-ws` | 实时 WebSocket |
+| `/api/stream` | `/api/public/probe-ws` | 实时 WebSocket，由容器共享单条上游连接并广播给所有访客 |
+
+### 🔌 主控降载
+
+容器通过共享流中继（`ProbeStreamRelay`）维护一条到主控的共享探针 WebSocket，把实时快照帧广播给所有访客；`/api/probe` 优先复用最近一帧（12 秒内），历史序列 `/api/series` 实时直连主控。这样访客数增加时不再按访客数增加主控 WebSocket 与实时数据查询。
 
 ### 🧩 Komari 兼容接口
 
@@ -188,6 +189,8 @@ http://localhost:8080/admin/settings/theme
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | ✅ | ✅ 全部支持 | — 主题本身无配置项 |
 | `https://github.com/vaspike/junimo` | ✅ | ❌ 不支持 Swap | — 主题本身无配置项 |
 
+> ℹ️ **Swap 数据说明**：妙妙屋 X 独立探针接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回 swap 字段，因此所有 Komari 主题中的 Swap 用量均显示为空或 0。这是上游数据源限制，非本适配器可补齐；若主控后续提供 swap 字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
+
 ### 📋 环境变量
 
 | 变量 | 必填 | 默认值 | 说明 |
@@ -197,7 +200,6 @@ http://localhost:8080/admin/settings/theme
 | `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/example/komari-theme` |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
 | `PORT` | 否 | `8080` | 容器内 HTTP 监听端口 |
-| `CACHE_TTL` | 否 | `5` | MMWX 探针数据缓存时间，单位秒 |
 | `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用主题配置写入。配置仅保存在容器内部运行目录 |
 
 ## 🧠 功能细节

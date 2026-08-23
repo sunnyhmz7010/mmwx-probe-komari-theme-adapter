@@ -12,6 +12,7 @@ import { createHttpServer } from '../src/http/server.js'
 import type { AppConfig } from '../src/config.js'
 import type { LoadedTheme } from '../src/theme/types.js'
 import { KomariDataService } from '../src/komari/service.js'
+import { ProbeStreamRelay } from '../src/mmwx/stream-relay.js'
 
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -20,7 +21,6 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     themeRepo: 'https://github.com/acme/theme',
     themeRef: 'main',
     port: 0,
-    cacheTtlMs: 5000,
     ...overrides,
   }
 }
@@ -84,9 +84,9 @@ test('serves /ping health check as plain text pong', async () => {
     streamUrl: () => 'ws://127.0.0.1:1/api/public/probe-ws',
     probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
   } as never
-  const service = new KomariDataService(mmwx, 1000)
-  const api = createApiRouter(service)
-  const serverHandle = createHttpServer(config({ port }), theme, api, mmwx)
+  const hub = new ProbeStreamRelay(mmwx)
+  const api = createApiRouter(new KomariDataService(hub))
+  const serverHandle = createHttpServer(config({ port }), theme, api, hub)
 
   try {
     await serverHandle.listen()
@@ -109,9 +109,9 @@ test('serves static assets and SPA fallback safely', async () => {
     streamUrl: () => 'ws://127.0.0.1:1/api/public/probe-ws',
     probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
   } as never
-  const service = new KomariDataService(mmwx, 1000)
-  const api = createApiRouter(service)
-  const serverHandle = createHttpServer(config({ port }), theme, api, mmwx)
+  const hub = new ProbeStreamRelay(mmwx)
+  const api = createApiRouter(new KomariDataService(hub))
+  const serverHandle = createHttpServer(config({ port }), theme, api, hub)
 
   try {
     await serverHandle.listen()
@@ -146,15 +146,15 @@ test('serves static assets and SPA fallback safely', async () => {
   }
 })
 
-test('routes websocket clients and stream proxy connections', async () => {
+test('routes websocket clients and broadcasts a shared stream hub connection', async () => {
   const theme = await tempTheme()
   const upstream = new WebSocketServer({ port: 0 })
-  const upstreamMessages: string[] = []
   const upstreamHeaders: string[] = []
+  const upstreamConnections: string[] = []
   upstream.on('connection', (socket, request) => {
+    upstreamConnections.push(String(request.socket.remotePort ?? ''))
     upstreamHeaders.push(String(request.headers['x-mmwx-probe-token'] ?? ''))
-    socket.on('message', (data) => upstreamMessages.push(data.toString()))
-    socket.send('hello')
+    socket.send(JSON.stringify({ servers: [{ name: 'node-0', online: true }] }))
   })
   await once(upstream, 'listening')
   const upstreamAddress = upstream.address()
@@ -166,10 +166,10 @@ test('routes websocket clients and stream proxy connections', async () => {
     streamUrl: () => `ws://127.0.0.1:${upstreamAddress.port}/api/public/probe-ws`,
     probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
   } as never
-  const service = new KomariDataService(mmwx, 1000)
-  const api = createApiRouter(service)
+  const hub = new ProbeStreamRelay(mmwx)
+  const api = createApiRouter(new KomariDataService(hub))
   const port = await reservePort()
-  const serverHandle = createHttpServer(config({ port }), theme, api, mmwx)
+  const serverHandle = createHttpServer(config({ port }), theme, api, hub)
 
   try {
     await serverHandle.listen()
@@ -191,22 +191,26 @@ test('routes websocket clients and stream proxy connections', async () => {
     const streamMessages: string[] = []
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(`ws://127.0.0.1:${basePort}/api/stream`)
-      socket.on('open', () => socket.send('client-hello'))
       socket.on('message', (data) => streamMessages.push(data.toString()))
       socket.once('close', resolve)
       socket.once('error', reject)
       setTimeout(() => {
         if (socket.readyState === WebSocket.OPEN) socket.close()
-      }, 100).unref()
+      }, 150).unref()
       setTimeout(() => {
         socket.close()
         resolve()
-      }, 500).unref()
+      }, 700).unref()
     })
 
     assert.equal(upstreamHeaders[0], 'probe-secret')
-    assert.ok(streamMessages.includes('hello'))
-    assert.ok(upstreamMessages.includes('client-hello'))
+    assert.ok(streamMessages.some((message) => {
+      try {
+        return JSON.stringify(JSON.parse(message)) === JSON.stringify({ servers: [{ name: 'node-0', online: true }] })
+      } catch {
+        return false
+      }
+    }))
   } finally {
     await serverHandle.close()
     await new Promise<void>((resolve) => upstream.close(() => resolve()))

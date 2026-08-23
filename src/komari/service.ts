@@ -51,11 +51,6 @@ interface ThemeSource {
   themeManifest?: Record<string, unknown> | null
 }
 
-interface CacheEntry<T> {
-  value: T
-  fetchedAt: number
-}
-
 interface SnapshotValue {
   snapshot: KomariSnapshot
   payload: ProbePayload
@@ -421,14 +416,11 @@ export class KomariServiceError extends Error {
 }
 
 export class KomariDataService {
-  private snapshot?: CacheEntry<SnapshotValue>
   private snapshotInflight?: Promise<SnapshotValue>
-  private readonly series = new Map<string, CacheEntry<ProbeSeriesPayload>>()
   private readonly seriesInflight = new Map<string, Promise<ProbeSeriesPayload>>()
 
   public constructor(
     private readonly client: DataClient,
-    private readonly cacheTtlMs: number,
     private readonly themeSource?: ThemeSource,
   ) {}
 
@@ -692,19 +684,14 @@ export class KomariDataService {
   }
 
   private async getSnapshotValue(): Promise<SnapshotValue> {
-    const cached = this.snapshot
-    const now = Date.now()
-    if (cached && now - cached.fetchedAt <= this.cacheTtlMs) return cached.value
     if (this.snapshotInflight) return this.snapshotInflight
 
     this.snapshotInflight = this.client.fetchProbe()
       .then((payload) => {
         const value = { snapshot: toSnapshot(payload), payload }
-        this.snapshot = { value, fetchedAt: Date.now() }
         return value
       })
       .catch((error: unknown) => {
-        if (cached && Date.now() - cached.fetchedAt <= 2 * this.cacheTtlMs) return cached.value
         throw new KomariServiceError('MMWX probe snapshot unavailable', error)
       })
       .finally(() => {
@@ -715,19 +702,11 @@ export class KomariDataService {
 
   private async getSeries(query: SeriesQuery): Promise<ProbeSeriesPayload> {
     const key = stableKey(query)
-    const cached = this.series.get(key)
-    const now = Date.now()
-    if (cached && now - cached.fetchedAt <= this.cacheTtlMs) return cached.value
     const inflight = this.seriesInflight.get(key)
     if (inflight) return inflight
 
     const request = this.client.fetchSeries(query)
-      .then((payload) => {
-        this.series.set(key, { value: payload, fetchedAt: Date.now() })
-        return payload
-      })
       .catch((error: unknown) => {
-        if (cached && Date.now() - cached.fetchedAt <= 2 * this.cacheTtlMs) return cached.value
         throw new KomariServiceError('MMWX probe history unavailable', error)
       })
       .finally(() => {

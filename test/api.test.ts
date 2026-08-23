@@ -231,7 +231,7 @@ test('MMWX probe-compatible HTTP paths bypass the Komari cache layer', async () 
         query,
       } as ProbeSeriesPayload
     },
-  }, 60_000)
+  })
 
   await withApi(service, async (baseUrl) => {
     assert.deepEqual((await request(baseUrl, '/api/probe')).body, { enabled: true, marker: 'probe-1', servers: [] })
@@ -292,7 +292,7 @@ test('Komari load history requests system metrics from the MMWX series API', asy
         },
       }
     },
-  }, 1000)
+  })
 
   const history = await service.getLoadHistory('mmwx-0', { uuid: 'mmwx-0', hours: '24' })
 
@@ -331,7 +331,7 @@ test('Komari ping history uses latency and loss points from the MMWX series API'
         ],
       }
     },
-  }, 1000)
+  })
 
   const history = await service.getPingHistory({ uuid: 'mmwx-0', task_id: '0', hours: '24' })
 
@@ -624,7 +624,7 @@ test('Komari common ping records aggregate every node when uuid is omitted', asy
         buckets: [{ ms: Number(query.server) + 10, loss: 0 }],
       }],
     }),
-  }, 1000)
+  })
 
   const records = await service.getRecords({ type: 'ping', hours: '1' })
 

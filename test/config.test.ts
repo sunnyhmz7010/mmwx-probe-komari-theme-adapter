@@ -58,7 +58,6 @@ test('loads defaults and normalizes the origin', () => {
     themeRepo: validEnv.THEME_REPO,
     themeRef: 'main',
     port: 8080,
-    cacheTtlMs: 5000,
     adminToken: undefined,
   })
 })
@@ -68,7 +67,6 @@ test('describes the complete startup configuration without exposing the probe to
     ...validEnv,
     THEME_REF: 'v1.2.3',
     PORT: '9090',
-    CACHE_TTL: '12',
     ADMIN_TOKEN: 'admin-secret',
   })
 
@@ -78,8 +76,8 @@ test('describes the complete startup configuration without exposing the probe to
   assert.match(summary, /THEME_REPO=https:\/\/github\.com\/example\/theme/)
   assert.match(summary, /THEME_REF=v1\.2\.3/)
   assert.match(summary, /PORT=9090/)
-  assert.match(summary, /CACHE_TTL=12s/)
   assert.match(summary, /ADMIN_TOKEN=\[REDACTED\]/)
+  assert.equal(summary.includes('CACHE_TTL'), false)
   assert.equal(summary.includes('THEME_BUILD'), false)
   assert.equal(summary.includes('DATA_DIR'), false)
   assert.equal(summary.includes('THEME_SETTINGS_FILE'), false)
@@ -94,7 +92,6 @@ test('ignores removed path and build environment variables', () => {
     THEME_REF: 'v1.2.3',
     THEME_BUILD: 'npm run build',
     PORT: '9090',
-    CACHE_TTL: '12',
     DATA_DIR: './runtime-data',
     THEME_SETTINGS_FILE: './runtime-data/custom-theme-settings.json',
     THEME_SETTINGS_JSON: '{"showNotice":true}',
@@ -102,12 +99,11 @@ test('ignores removed path and build environment variables', () => {
 
   assert.equal(config.themeRef, 'v1.2.3')
   assert.equal(config.port, 9090)
-  assert.equal(config.cacheTtlMs, 12000)
   assert.equal(config.adminToken, undefined)
 })
 
 test('rejects malformed integer configuration', () => {
-  for (const [key, value] of [['PORT', '8.5'], ['CACHE_TTL', '-1'], ['PORT', 'not-a-number']] as const) {
+  for (const [key, value] of [['PORT', '8.5'], ['PORT', 'not-a-number']] as const) {
     assert.throws(
       () => loadConfig({ ...validEnv, [key]: value }),
       (error: unknown) => isConfigError(error) && new RegExp(key).test(error.message),

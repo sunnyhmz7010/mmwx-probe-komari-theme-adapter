@@ -14,7 +14,6 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     themeRepo: 'https://github.com/acme/theme',
     themeRef: 'main',
     port: 8080,
-    cacheTtlMs: 5000,
     ...overrides,
   }
 }

@@ -11,5 +11,4 @@ services:
       - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
       - PORT=8080
-      - CACHE_TTL=5
       - ADMIN_TOKEN=replace-with-random-admin-token

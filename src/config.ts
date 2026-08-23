@@ -4,7 +4,6 @@ export interface AppConfig {
   themeRepo: string
   themeRef: string
   port: number
-  cacheTtlMs: number
   adminToken?: string
 }
 
@@ -18,7 +17,6 @@ export function describeConfig(config: AppConfig): string {
     `THEME_REPO=${config.themeRepo}`,
     `THEME_REF=${config.themeRef}`,
     `PORT=${config.port}`,
-    `CACHE_TTL=${config.cacheTtlMs / 1000}s`,
     `ADMIN_TOKEN=${config.adminToken ? '[REDACTED]' : 'disabled'}`,
   ].join(' ')
 }
@@ -103,17 +101,12 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   if (port > 65535) {
     throw new ConfigError('PORT must be between 1 and 65535')
   }
-  const cacheTtlMs = parsePositiveInteger(env, 'CACHE_TTL', 5) * 1000
-  if (!Number.isSafeInteger(cacheTtlMs)) {
-    throw new ConfigError('CACHE_TTL is too large')
-  }
   return {
     mmwxOrigin,
     probeToken,
     themeRepo,
     themeRef,
     port,
-    cacheTtlMs,
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
   }
 }

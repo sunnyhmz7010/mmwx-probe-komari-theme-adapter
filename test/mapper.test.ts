@@ -276,7 +276,7 @@ test('maps load history in timestamp order and omits invalid values', () => {
   assert.equal(history.count, 2)
 })
 
-test('caches snapshots, deduplicates concurrent requests, and serves a short stale fallback', async () => {
+test('deduplicates concurrent snapshot requests and surfaces upstream failures', async () => {
   let calls = 0
   let shouldFail = false
   const payload: ProbePayload = { servers: [server()] }
@@ -289,27 +289,21 @@ test('caches snapshots, deduplicates concurrent requests, and serves a short sta
     },
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
   }
-  const service = new KomariDataService(client, 100)
+  const service = new KomariDataService(client)
 
   const [first, second] = await Promise.all([service.getSnapshot(), service.getSnapshot()])
   assert.equal(calls, 1)
   assert.equal(first.nodes[0].uuid, 'mmwx-0')
   assert.deepEqual(second, first)
 
-  await new Promise((resolve) => setTimeout(resolve, 120))
   shouldFail = true
-  const stale = await service.getSnapshot()
-  assert.deepEqual(stale, first)
-  assert.equal(calls, 2)
-
-  await new Promise((resolve) => setTimeout(resolve, 120))
   await assert.rejects(() => service.getSnapshot(), (error: unknown) => (
     error instanceof Error
       && (error as { statusCode?: number }).statusCode === 502
   ))
 })
 
-test('serves ping history from cached MMWX series without dropping points', async () => {
+test('serves ping history from the MMWX series without dropping points', async () => {
   let calls = 0
   const client = {
     fetchProbe: async () => ({ servers: [server()] }),
@@ -329,13 +323,11 @@ test('serves ping history from cached MMWX series without dropping points', asyn
       }
     },
   }
-  const service = new KomariDataService(client, 1000)
+  const service = new KomariDataService(client)
 
   const first = await service.getPingHistory({ hours: 1 })
-  const second = await service.getPingHistory({ hours: 1 })
 
   assert.equal(calls, 1)
-  assert.deepEqual(second, first)
   assert.equal(first.count, 2)
   assert.equal(first.records[0].value, 25)
   assert.equal(first.records[1].value, null)
@@ -343,7 +335,7 @@ test('serves ping history from cached MMWX series without dropping points', asyn
   assert.deepEqual(first.tasks.map((task) => task.name), ['Google'])
 })
 
-test('caches series by normalized query key and resolves the requested node history', async () => {
+test('resolves the requested node history from the MMWX series', async () => {
   let calls = 0
   const client = {
     fetchProbe: async () => ({ servers: [] }),
@@ -357,13 +349,11 @@ test('caches series by normalized query key and resolves the requested node hist
       }
     },
   }
-  const service = new KomariDataService(client, 1000)
+  const service = new KomariDataService(client)
 
   const first = await service.getLoadHistory('mmwx-1', { hours: 1, load_type: 'cpu' })
-  const second = await service.getLoadHistory('mmwx-1', { load_type: 'cpu', hours: 1 })
 
   assert.equal(calls, 1)
-  assert.deepEqual(first, second)
   assert.deepEqual(first.records[0], { client: 'mmwx-1', time: '2026-08-21T00:00:00.000Z', cpu: 3 })
 })
 
@@ -427,7 +417,7 @@ test('wraps raw probe payload into theme-ready envelope with normalized fields',
       }],
     } as ProbePayload),
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
-  }, 1000, { repoUrl: 'https://github.com/vaspike/junimo', ref: 'main', themeTitle: '服务器状态' } as never)
+  }, { repoUrl: 'https://github.com/vaspike/junimo', ref: 'main', themeTitle: '服务器状态' } as never)
 
   const payload = await service.getProbePayload()
   const server = payload.servers[0]
@@ -465,7 +455,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
       servers: [server()],
     } as ProbePayload),
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
-  }, 1000, {
+  }, {
     repoUrl: 'https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism',
     ref: 'main',
     themeSettings,
@@ -500,7 +490,7 @@ test('keeps header logo separate from browser favicon metadata', async () => {
       servers: [server()],
     } as ProbePayload),
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
-  }, 1000, {
+  }, {
     repoUrl: 'https://github.com/Tokinx/komari-theme-emerald',
     ref: 'master',
     themeTitle: '服务器状态',
@@ -523,7 +513,7 @@ test('uses only explicit probe icon for browser favicon metadata', async () => {
       servers: [server()],
     } as ProbePayload),
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({ systems: [] }),
-  }, 1000, {
+  }, {
     repoUrl: 'https://github.com/Tokinx/komari-theme-emerald',
     ref: 'master',
     themeTitle: '服务器状态',
@@ -559,7 +549,7 @@ test('maps ping buckets into Komari metric query series', async () => {
         ],
       }
     },
-  }, 1000)
+  })
 
   const metrics = await service.getQueryMetrics({
     entity_id: 'mmwx-0',
@@ -593,7 +583,7 @@ test('uses current probe values as metric fallback when system history omits ava
         cpu_pct: [{ timestamp: 1787399700, value: 5 }],
       },
     }),
-  }, 1000)
+  })
 
   const metrics = await service.getQueryMetrics({
     entity_id: 'mmwx-0',
@@ -623,7 +613,7 @@ test('derives Junimo homepage ping bindings from available public ping tasks', a
         buckets: [{ ms: 25, loss: 0 }],
       }],
     }),
-  }, 1000, {
+  }, {
     repoUrl: 'https://github.com/vaspike/junimo',
     ref: 'main',
   } as never)

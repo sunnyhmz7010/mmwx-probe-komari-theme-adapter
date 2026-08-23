@@ -47,8 +47,9 @@ docker build -t mmwx-komari-adapter .  # 构建本地镜像
 src/main.ts          ← 入口：加载配置、构建主题、组装服务、生命周期处理
 src/config.ts        ← 环境变量解析与安全校验
 src/mmwx/client.ts   ← MMWX independent-probe HTTP/WebSocket 客户端
+src/mmwx/stream-relay.ts ← 主控降载：共享单条上游 WS、快照帧复用与广播
 src/komari/mapper.ts ← MMWX 数据到 Komari 形态的映射
-src/komari/service.ts← 缓存、查询和历史数据服务
+src/komari/service.ts← 查询和历史数据服务
 src/http/api.ts      ← Komari 兼容 API 与 RPC2 路由
 src/http/server.ts   ← HTTP server 与 WebSocket 路由
 src/http/static.ts   ← 静态主题资源和 SPA fallback
@@ -65,5 +66,4 @@ src/theme/settings-store.ts ← 主题配置 JSON 文件读写与校验
 | `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址 |
 | `THEME_REF` | 否 | `main` | 主题分支、标签或 commit |
 | `PORT` | 否 | `8080` | HTTP 监听端口 |
-| `CACHE_TTL` | 否 | `5` | 探针数据缓存时间，单位秒 |
 | `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用写入 |
