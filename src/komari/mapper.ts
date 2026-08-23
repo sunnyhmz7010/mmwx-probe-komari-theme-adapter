@@ -393,7 +393,7 @@ export function toKomariPublicNodes(payload: ProbePayload): KomariPublicNode[] {
       region: regionLabel(server),
       mem_total: numberOrUndefined(server.mem_total) ?? 0,
       disk_total: numberOrUndefined(server.disk_total) ?? 0,
-      price: firstFinite([server.renewal_price, server.renewal_price_cny, server.price]) ?? 0,
+      price: renewalPrice(server),
       billing_cycle: numberOrUndefined(server.billing_cycle) ?? renewalCycleDays(server.renewal_cycle),
       currency: renewalCurrency(server),
       expired_at: isEmptyDateValue(server.expired_at ?? server.expires_at)
@@ -437,23 +437,22 @@ function renewalCycleDays(cycle: unknown): number {
   }
 }
 
+function renewalPrice(server: ProbeServer): number {
+  return firstFinite([server.renewal_price_cny, server.renewal_price, server.price]) ?? 0
+}
+
 function renewalCurrency(server: ProbeServer): string {
+  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return '¥'
+  if (currencyCode(server.renewal_currency) === 'CNY') return '¥'
   const explicit = server.currency?.trim()
   if (explicit) return explicit
-  if (numberOrUndefined(server.renewal_price) !== undefined) {
-    return currencySymbol(server.renewal_currency)
-  }
-  if (numberOrUndefined(server.renewal_price_cny) !== undefined) return '¥'
   return '$'
 }
 
-function currencySymbol(code: unknown): string {
-  const normalized = typeof code === 'string' ? code.trim().toUpperCase() : ''
-  const symbols: Record<string, string> = {
-    USD: '$', CNY: '¥', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$',
-    HKD: 'HK$', TWD: 'NT$', SGD: 'S$', KRW: '₩', INR: '₹', BRL: 'R$',
-  }
-  return symbols[normalized] ?? (normalized || '$')
+function currencyCode(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : ''
+  if (normalized === '¥' || normalized === '￥' || normalized === 'RMB') return 'CNY'
+  return normalized
 }
 
 function trafficLimitType(server: ProbeServer): string {
