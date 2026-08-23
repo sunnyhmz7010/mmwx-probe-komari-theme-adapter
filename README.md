@@ -1,6 +1,6 @@
 <div align="center">
   <h1>MMWX Probe Komari Theme Adapter</h1>
-  <p>将 MMWX 探针代理、Komari 兼容转换和主题加载放在同一容器里，对外提供可直接访问的只读主题页面。</p>
+  <p>将妙妙屋 X 主控探针数据转换为 Komari 主题可读的只读探针前端，集成代理、兼容转换与主题加载。</p>
 </div>
 
 <p align="center">
@@ -12,15 +12,16 @@
 
 ## ✨ 为什么做这个项目
 
-MMWX 探针已经提供稳定的原始数据接口，但直接暴露主控域名和访问密钥并不适合公开展示。这个容器把固定的探针代理、WebSocket 实时流、Komari 兼容转换和主题页面放在同一个对外地址下：访客只访问容器暴露的探针域名，容器再携带 `PROBE_TOKEN` 请求主控。
+MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API 代理和 WebSocket 代理，但内置主题有限。本项目通过 Komari 兼容转换层，让 妙妙屋 X 探针数据可以驱动 Komari 生态中的丰富主题，并把固定的探针代理、WebSocket 实时流和主题页面整合到同一个对外地址下，访客只接触探针域名，无需直接访问主控域名。
 
 它适合已经部署独立探针的主控，又希望用 Docker 快速部署公开探针页面、复用 Komari 主题展示效果的场景。
 
-## ⚠️ 免责声明
+⚠️ **免责声明**：
 
-- 本项目与 Komari 官方项目无关，也不代表 Komari 官方立场
-- 本项目与妙妙屋 X 主控的原作者、维护者或运营方无关
-- 这里的“Komari 兼容”只表示 API 形状兼容，不表示上游项目关系或授权关系
+- 本项目与 Komari 官方项目无关。
+- 本项目与妙妙屋 X 官方项目无关。
+- 这里的“Komari 兼容”只表示 API 形状兼容，不表示上游项目关系或授权关系。
+- 本项目若使用或兼容 Komari 生态中的第三方主题，相关主题的版权、商标和知识产权均归其原作者所有；本项目与这些第三方主题作者无隶属、合作或背书关系，展示/兼容不代表作者认可本项目。
 
 ## 🚀 核心能力
 
@@ -116,7 +117,7 @@ docker run -d \
 
 ## 📖 使用说明
 
-### 📡 工作方式
+### 📡 妙妙屋 X 主控探针代理
 
 ```text
 浏览器 ──HTTP/WS──> Docker 容器 ──携带 PROBE_TOKEN──> 妙妙屋 X 主控
@@ -126,24 +127,9 @@ docker run -d \
 
 | 对外路径 | 主控路径 | 用途 |
 | --- | --- | --- |
-| `/api/probe` | `/api/public/probe-servers` | 服务器状态 |
+| `/api/probe` | `/api/public/probe-servers` | 服务器状态（服务器列表中的每个 `servers[]` 对象还会返回当前计费周期的 `daily_traffic`，元素包含 `date`、`uplink`、`downlink` 和 `total`（字节）。周期汇总字段包括 `traffic_used_up`、`traffic_used_down`、`traffic_used_total`，周期边界为 `period_start`（含）和 `period_end`（不含）。兼容字段 `traffic_used` 仍表示按主控服务器统计模式计算的计费用量。） |
 | `/api/series` | `/api/public/probe-series` | 24 小时延迟、丢包率及系统指标历史；追加 `metric=system` 获取 CPU、内存、网速和累计流量序列 |
 | `/api/stream` | `/api/public/probe-ws` | 实时 WebSocket |
-
-`/api/probe` 返回的 `servers[]` 对象会保留主控提供的当前计费周期流量字段：
-
-- `daily_traffic`：按日期拆分的流量明细，元素包含 `date`、`uplink`、`downlink`、`total`，单位为字节
-- `traffic_used_up`、`traffic_used_down`、`traffic_used_total`：当前周期上行、下行和总用量
-- `period_start`、`period_end`：计费周期边界，`period_start` 含，`period_end` 不含
-- `traffic_used`：兼容字段，表示按主控服务器统计模式计算的计费用量
-
-`/api/probe` 还会补齐主题所需的外层字段：
-
-- `enabled`：页面启用开关
-- `title`、`logo`、`appearance`、`license_badge`：主题标题、图标、外观和徽标
-- `show_globe`、`show_daily_trend`、`show_traffic_hotspots`、`show_traffic_7d`、`show_resource_heatmap`、`show_traffic_quota`、`show_renewal_timeline`、`show_health_score`：主题模块开关
-
-节点字段会统一归一化为主题可直接消费的格式，并保留流量、续费和回程等附加信息。
 
 ### 🧩 Komari 兼容接口
 
@@ -205,43 +191,15 @@ http://localhost:8080/admin/settings/theme
 
 页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
 
-配置保存位置默认是：
-
-```text
-/data/theme-settings.json
-```
-
-最终返回给主题的 `theme_settings` 合并顺序为：
-
-```text
-主题默认值 < theme-settings.json < THEME_SETTINGS_JSON < 适配器自动兼容补丁
-```
-
-同时兼容 Komari 后台读取主题配置声明的路径：
-
-```text
-/themes/<当前主题>/komari-theme.json
-```
-
 没有 `configuration` 的主题会显示“当前主题未声明可配置项”，并提供高级 JSON 编辑入口。
 
 ### 🧪 已实测主题仓库
 
-| 主题仓库 | 状态 | 备注 |
-| --- | --- | --- |
-| `https://github.com/jianmomo/komari-theme-Glassmorphism-Enhanced` | ✅ | 直接读取 `komari-theme.json`，支持管理型配置页 |
-| `https://github.com/vaspike/junimo` | ✅ | 直接读取 `komari-theme.json`，支持公开前台 |
-| `https://github.com/sunnyhmz7010/komari-theme-adhesive-note` | ✅ | 直接读取 `komari-theme.json`，支持公开前台 |
-
-### ✅❌ 功能支持矩阵
-
-| 功能 | 状态 | 说明 |
-| --- | --- | --- |
-| 原始探针代理 `/api/probe`、`/api/series`、`/api/stream` | ✅ | 只做透传和必要的 token 转发 |
-| Komari 兼容 RPC2 | ✅ | 提供只读方法和固定返回结构 |
-| 多节点 Ping / 负载聚合 | ✅ | 未指定 `uuid` 时聚合全部可见节点 |
-| 登录、写入、节点修改 | ❌ | 明确不在兼容范围内 |
-| 直接暴露上游地址 | ❌ | 不允许访客指定任意上游 |
+| 主题仓库 | 状态 | 主题配置 | 备注 |
+| --- | --- | --- |--- |
+| `https://github.com/jianmomo/komari-theme-Glassmorphism-Enhanced` | ✅ | ✅ |直接读取 `komari-theme.json`，支持管理型配置页 |
+| `https://github.com/vaspike/junimo` | ✅ | ❌ |直接读取 `komari-theme.json`，支持公开前台 |
+| `https://github.com/sunnyhmz7010/komari-theme-adhesive-note` | ✅ | ❌ |直接读取 `komari-theme.json`，支持公开前台 |
 
 ### 📋 环境变量
 
