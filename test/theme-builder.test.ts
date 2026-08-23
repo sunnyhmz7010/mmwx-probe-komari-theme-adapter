@@ -59,6 +59,41 @@ process.exit(2)
   }
 }
 
+async function fakeBunFixture(options: { failInstall: boolean }): Promise<{ binDir: string; restorePath: () => void }> {
+  const binDir = await fixture()
+  const scriptPath = path.join(binDir, 'fake-bun.cjs')
+  const commandPath = path.join(binDir, 'bun.cmd')
+  const script = `
+const args = process.argv.slice(2)
+
+if (args[0] === 'install') {
+  if (${options.failInstall ? 'true' : 'false'}) {
+    process.stderr.write('bun install failed\\n')
+    process.exit(1)
+  }
+  process.exit(0)
+}
+
+if (args[0] === 'run' && args[1] === 'build') {
+  process.stderr.write('unexpected bun build\\n')
+  process.exit(2)
+}
+
+process.stderr.write(\`unexpected args: \${args.join(' ')}\\n\`)
+process.exit(2)
+`
+  await writeFile(scriptPath, script)
+  await writeFile(commandPath, `@echo off\r\nnode "${scriptPath}" %*\r\n`)
+  const originalPath = process.env.PATH ?? ''
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath}`
+  return {
+    binDir,
+    restorePath() {
+      process.env.PATH = originalPath
+    },
+  }
+}
+
 test('uses the repository root when it already contains index.html', async () => {
   const repoDir = await packageFixture({ 'index.html': '<!doctype html>' })
 
@@ -226,6 +261,41 @@ test('keeps a generated output directory when the build command exits non-zero',
     fakeNpm.restorePath()
     await rm(repoDir, { recursive: true, force: true })
     await rm(outputDir, { recursive: true, force: true })
+    await rm(fakeNpm.binDir, { recursive: true, force: true })
+  }
+})
+
+test('falls back to npm when bun install fails', async () => {
+  const repoDir = await packageFixture({
+    'package.json': JSON.stringify({
+      packageManager: 'bun@1.3.14',
+      scripts: { build: 'build' },
+    }),
+    'package-lock.json': '{}',
+    'index.html': '<script type="module" src="/src/main.ts"></script>',
+  })
+  const outputDir = await fixture()
+  const fakeBun = await fakeBunFixture({ failInstall: true })
+  const fakeNpm = await fakeNpmFixture({ writeOutputOnBuild: true })
+  const logs: string[] = []
+  const logger = {
+    info(message: string) { logs.push(`info:${message}`) },
+    warn(message: string) { logs.push(`warn:${message}`) },
+    error(message: string) { logs.push(`error:${message}`) },
+  }
+
+  try {
+    const plan = await detectBuildPlan(repoDir)
+    const result = await buildTheme(plan, repoDir, outputDir, logger)
+    assert.equal(result, outputDir)
+    assert.equal(await readFile(path.join(outputDir, 'index.html'), 'utf8'), '<main>theme</main>')
+    assert.ok(logs.some((line) => line.startsWith('warn:主题依赖安装失败，回退到 npm')))
+  } finally {
+    fakeBun.restorePath()
+    fakeNpm.restorePath()
+    await rm(repoDir, { recursive: true, force: true })
+    await rm(outputDir, { recursive: true, force: true })
+    await rm(fakeBun.binDir, { recursive: true, force: true })
     await rm(fakeNpm.binDir, { recursive: true, force: true })
   }
 })

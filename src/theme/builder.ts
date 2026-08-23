@@ -94,6 +94,11 @@ function commandFor(manager: Exclude<PackageManager, 'none'>): { installArgs: st
   return { installArgs: ['ci'], buildArgs: ['run', 'build'] }
 }
 
+function npmFallbackCommand(repoDir: string): { installArgs: string[]; buildArgs: string[] } {
+  if (existsSync(repoDir, 'package-lock.json')) return { installArgs: ['ci'], buildArgs: ['run', 'build'] }
+  return { installArgs: ['install'], buildArgs: ['run', 'build'] }
+}
+
 export async function detectBuildPlan(repoDir: string): Promise<BuildPlan> {
   const resolvedRepo = path.resolve(repoDir)
   const hasRootIndex = existsSync(resolvedRepo, 'index.html')
@@ -174,14 +179,27 @@ export async function buildTheme(plan: BuildPlan, repoDir: string, outputDir: st
   const resolvedOutput = path.resolve(outputDir)
   logger.info('主题构建开始', { packageManager: plan.packageManager })
   if (plan.packageManager !== 'none') {
-    const executable = process.platform === 'win32' ? `${plan.packageManager}.cmd` : plan.packageManager
+    let executable = process.platform === 'win32' ? `${plan.packageManager}.cmd` : plan.packageManager
+    let buildArgs = plan.buildArgs
     const options = { cwd: resolvedRepo, env: buildEnvironment() }
     logger.info('主题依赖安装开始', { command: `${executable} ${plan.installArgs.join(' ')}` })
-    await spawnFile(executable, plan.installArgs, options, logger, '主题依赖安装')
-    logger.info('主题依赖安装完成')
-    logger.info('主题构建命令开始', { command: `${executable} ${plan.buildArgs.join(' ')}` })
     try {
-      await spawnFile(executable, plan.buildArgs, options, logger, '主题构建命令')
+      await spawnFile(executable, plan.installArgs, options, logger, '主题依赖安装')
+    } catch (error) {
+      if (plan.packageManager !== 'bun') throw error
+      const fallback = npmFallbackCommand(resolvedRepo)
+      executable = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+      buildArgs = fallback.buildArgs
+      logger.warn('主题依赖安装失败，回退到 npm', {
+        command: `${executable} ${fallback.installArgs.join(' ')}`,
+        reason: error instanceof Error ? error.message : 'unknown error',
+      })
+      await spawnFile(executable, fallback.installArgs, options, logger, '主题依赖安装')
+    }
+    logger.info('主题依赖安装完成')
+    logger.info('主题构建命令开始', { command: `${executable} ${buildArgs.join(' ')}` })
+    try {
+      await spawnFile(executable, buildArgs, options, logger, '主题构建命令')
     } catch (error) {
       const generatedOutputCandidates = plan.outputCandidates.filter((candidate) => candidate !== '.')
       try {
