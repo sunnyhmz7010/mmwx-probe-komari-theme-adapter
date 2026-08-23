@@ -198,6 +198,33 @@ test('keeps explicit Komari price and currency when present', () => {
   assert.equal(node.billing_cycle, 30)
 })
 
+test('maps return routes into Komari tags with premium and normal colors', () => {
+  const [node] = toKomariPublicNodes({
+    servers: [server({
+      return_routes: [
+        { carrier: 'telecom', route_type: 'CN2 GIA' },
+        { carrier: 'unicom', route_type: '4837' },
+        { carrier: 'mobile', route_type: 'CMIN2' },
+      ],
+    })],
+  })
+
+  assert.equal(node.tags, '电信 CN2 GIA<gold>;联通 4837<blue>;移动 CMIN2<gold>')
+})
+
+test('merges original tags with return route tags without duplication', () => {
+  const [node] = toKomariPublicNodes({
+    servers: [server({
+      tags: '白嫖中',
+      return_routes: [
+        { carrier: 'telecom', route_type: '163' },
+      ],
+    })],
+  })
+
+  assert.equal(node.tags, '白嫖中;电信 163<blue>')
+})
+
 test('maps system metrics with separate realtime and cumulative network fields', () => {
   const history = toSystemMetricHistory({
     cpu_pct: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 3.5 }],

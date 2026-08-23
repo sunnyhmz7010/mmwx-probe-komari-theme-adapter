@@ -407,7 +407,7 @@ export function toKomariPublicNodes(payload: ProbePayload): KomariPublicNode[] {
     const weight = numberOrUndefined(server.weight)
     const autoRenewal = server.auto_renewal === true ? true : undefined
     const group = stringOrUndefined(server.group)
-    const tags = stringOrUndefined(server.tags)
+    const tags = mergeTags(stringOrUndefined(server.tags), routeTags(server))
     const hidden = server.hidden === true ? true : undefined
     const createdAt = dateTimeOrUndefined(server.created_at)
     const updatedAt = dateTimeOrUndefined(server.updated_at)
@@ -453,6 +453,38 @@ function currencyCode(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toUpperCase() : ''
   if (normalized === '¥' || normalized === '￥' || normalized === 'RMB') return 'CNY'
   return normalized
+}
+
+const CARRIER_LABELS: Record<string, string> = {
+  telecom: '电信',
+  unicom: '联通',
+  mobile: '移动',
+}
+
+const PREMIUM_ROUTES = new Set(['CN2 GIA', 'CTG GIA', '9929', '10099', 'CMIN2'])
+
+function routeTags(server: ProbeServer): string[] {
+  const routes = server.return_routes ?? server.routes
+  if (!Array.isArray(routes) || routes.length === 0) return []
+  return routes
+    .map((route) => {
+      const carrier = CARRIER_LABELS[route.carrier ?? ''] ?? route.carrier ?? ''
+      const routeType = stringOrUndefined(route.route_type)
+      if (!routeType) return undefined
+      const label = carrier ? `${carrier} ${routeType}` : routeType
+      const color = PREMIUM_ROUTES.has(routeType.toUpperCase()) ? 'gold' : 'blue'
+      return `${label}<${color}>`
+    })
+    .filter((tag): tag is string => tag !== undefined)
+}
+
+function mergeTags(original: string | undefined, extra: string[]): string | undefined {
+  const parts: string[] = []
+  if (original) parts.push(original)
+  for (const tag of extra) {
+    if (!parts.includes(tag)) parts.push(tag)
+  }
+  return parts.length > 0 ? parts.join(';') : undefined
 }
 
 function trafficLimitType(server: ProbeServer): string {
