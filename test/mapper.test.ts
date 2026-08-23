@@ -562,7 +562,7 @@ test('maps ping buckets into Komari metric query series', async () => {
     ['ping.loss', { task_id: '1' }],
   ])
   assert.deepEqual(metrics.series[0].points.map((point) => point.value), [25, 30])
-  assert.deepEqual(metrics.series[1].points.map((point) => point.value), [0, 2])
+  assert.deepEqual(metrics.series[1].points.map((point) => point.value), [0, 0.02])
 })
 
 test('uses current probe values as metric fallback when system history omits available fields', async () => {

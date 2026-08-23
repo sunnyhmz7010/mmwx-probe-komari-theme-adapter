@@ -986,6 +986,12 @@ function currentMetricValue(server: ProbeServer, metricKey: string): number | un
   }
 }
 
+function normalizePingLossRatio(loss: unknown): number | undefined {
+  const numeric = numberOrUndefined(loss)
+  if (numeric === undefined || numeric < 0) return undefined
+  return numeric / 100
+}
+
 function collectPingQueryMetricSeries(
   history: PingHistory,
   entityIds: readonly string[],
@@ -1012,7 +1018,7 @@ function collectPingQueryMetricSeries(
     for (const metricKey of metricKeys) {
       const points = sorted.map((record): KomariMetricPoint => {
         const value = metricKey === 'ping.loss'
-          ? numberOrUndefined(record.loss)
+          ? normalizePingLossRatio(record.loss)
           : typeof record.value === 'number' && record.value >= 0 ? record.value : undefined
         return {
           time: record.time,

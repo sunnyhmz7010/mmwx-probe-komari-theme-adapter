@@ -363,9 +363,9 @@ function dateTimeOrUndefined(value: unknown): string | undefined {
 }
 
 function regionLabel(server: ProbeServer): string {
-  return server.region?.trim()
+  return server.region_country?.trim()
     || server.country?.trim()
-    || server.region_country?.trim()
+    || server.region?.trim()
     || server.region_name?.trim()
     || server.region_city?.trim()
     || ''
