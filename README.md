@@ -23,8 +23,6 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 这里的“Komari 兼容”只表示 API 形状兼容，不表示上游项目关系或授权关系
 - 本项目若使用或兼容 Komari 生态中的第三方主题，相关主题的版权、商标和知识产权均归其原作者所有；本项目与这些第三方主题作者无隶属、合作或背书关系，展示/兼容不代表作者认可本项目
 
-> ℹ️ **内置资源声明**：`static-assets/` 下的国旗（flags）与操作系统图标（logo）资源来自 Komari 生态第三方主题 [vaspike/junimo](https://github.com/vaspike/junimo)（Apache-2.0 许可），仅用于模拟 Komari 主控的静态资源路径、作为主题未自带资源时的兜底。相关资源版权归原主题作者所有。
-
 ## 🚀 核心能力
 
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
@@ -188,9 +186,9 @@ http://localhost:8080/admin
 | 仓库地址 | 仓库分支 | 页面显示 | 数据兼容性 | 主题配置 |
 | --- | :---: | :---: | --- | --- |
 | `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | 待测试 | 待测试 |
-| `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ | ✅ 全部支持（国家/系统图标由内置资源兜底） | 有配置项，已兼容 |
+| `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
-| `https://github.com/vaspike/junimo` | main | ✅ | ⚠️ 延迟与丢包率间歇无样本区间（上游数据空档，丢包率数值已修正） | 主题本身无配置项 |
+| `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
 
 > ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、TCP/UDP 连接数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
 
