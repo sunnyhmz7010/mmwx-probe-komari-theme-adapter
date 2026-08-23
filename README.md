@@ -183,14 +183,14 @@ http://localhost:8080/admin/settings/theme
 
 ### 🧪 已实测主题仓库
 
-| 主题仓库 | 页面显示 | 数据兼容性 | 主题配置 |
-| --- | :---: | --- | --- |
-| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | ✅ | 大部分数据无法显示 | ❌ 有配置项，未兼容 |
-| `https://github.com/Tokinx/komari-theme-emerald` | ✅ | ✅ 全部支持 | ✅ 有配置项，已兼容 |
-| `https://github.com/stqfdyr/komari-theme-adhesive-note` | ✅ | ✅ 全部支持 | — 主题本身无配置项 |
-| `https://github.com/vaspike/junimo` | ✅ | ❌ 不支持 Swap | — 主题本身无配置项 |
+| 仓库地址 | 仓库分支 | 页面显示 | 数据兼容性 | 主题配置 |
+| --- | :---: | :---: | --- | --- |
+| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | 待测试 | 待测试 |
+| `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ |  ⚠️ 国家与系统图标无法显示 | 有配置项，已兼容 |
+| `https://github.com/stqfdyr/komari-theme-adhesive-note` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
+| `https://github.com/vaspike/junimo` | main | ✅ | ⚠️ 延迟与丢包率间歇存在无样本区间 | 主题本身无配置项 |
 
-> ℹ️ **上游未提供字段说明**：妙妙屋 X 独立探针接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、TCP/UDP 连接数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
+> ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、TCP/UDP 连接数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
 
 ### 📋 环境变量
 
