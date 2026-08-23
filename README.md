@@ -30,6 +30,7 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
 - 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin/settings/theme` 轻量配置页，并将配置保存到容器内部运行目录
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
+- 主控降载：通过共享流中继维护一条到主控的探针 WebSocket，广播给所有访客并复用最近快照帧，访客数增加不再按比例增加主控连接与实时查询
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
 - 只读安全边界：`PROBE_TOKEN` 仅用于容器访问已配置主控，不暴露给浏览器，不提供登录、管理、写入或节点修改能力
 
@@ -205,6 +206,7 @@ http://localhost:8080/admin/settings/theme
 ## 🧠 功能细节
 
 - 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做妙妙屋 X 主控代理，不改写路径、状态码和流式行为
+- 共享流降载：`ProbeStreamRelay` 在单进程内维护一条到主控的探针 WebSocket，把实时快照帧广播给所有下游访客；`/api/probe` 在 12 秒帧龄内复用最近一帧，历史序列 `/api/series` 实时直连；上游断开后指数退避重连，最后一名访客离开 30 秒后自动断开上游
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
