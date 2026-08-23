@@ -168,7 +168,7 @@ function adminThemeSettingsHtml(theme: LoadedTheme): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MMWX 探针 Komari 主题适配器 - 设置</title>
+<title>MMWX Probe Komari Theme Adapter Settings</title>
 <style>
 :root{--bg:#eef2f7;--card:#fff;--ink:#0f172a;--muted:#64748b;--brand:#2563eb;--brand-2:#1d4ed8;--border:#e2e8f0;--accent:#6366f1}
 *{box-sizing:border-box}
@@ -217,7 +217,7 @@ textarea{min-height:110px;resize:vertical}
 <body>
 <div class="wrap">
 <header>
-<h1>MMWX 探针 Komari 主题适配器 - 设置</h1>
+<h1>MMWX Probe Komari Theme Adapter Settings</h1>
 <div class="meta">
 <span>当前主题：<b>${title}</b></span>
 <span>仓库：<a href="${htmlEscape(repoUrl)}" target="_blank" rel="noreferrer">${htmlEscape(repoDisplay)}</a> @ ${htmlEscape(theme.source.ref)}</span>
@@ -266,7 +266,7 @@ async function boot(){
   const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
   const cfg=manifest&&manifest.configuration;
   const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
-  if(!cfg){app.innerHTML='<div class="card"><div class="empty"><h2>当前主题未声明可配置项。</h2></div></div>';return}
+  if(!cfg){app.innerHTML='<div class="card"><div class="empty"><h2>当前主题未声明可配置项</h2></div></div>';return}
   const type=String(cfg.type||"managed").toLowerCase();
   if(type==="redirect"){app.innerHTML='<div class="card"><div class="empty"><h2>主题配置使用跳转页面</h2><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p></div></div>';return}
   if(type==="raw"){app.innerHTML='<div class="card"><iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:0;display:block" srcdoc="'+html(cfg.data||"")+'"></iframe></div>';return}
