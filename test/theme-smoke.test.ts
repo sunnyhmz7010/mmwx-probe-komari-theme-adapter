@@ -25,11 +25,8 @@ const baseConfig: AppConfig = {
   probeToken: 'probe-secret',
   themeRepo: 'https://github.com/acme/theme',
   themeRef: 'main',
-  themeBuild: undefined,
   port: 0,
   cacheTtlMs: 1000,
-  dataDir: '/data',
-  themeSettingsFile: '/data/theme-settings.json',
 }
 
 async function fixture(name: string): Promise<Fixture> {

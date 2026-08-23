@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 import type { MmwxMetricPoint, MmwxProbeSeries, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbeLicenseBadge, ProbePayload, ProbePingSeries, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
-import type { FileThemeSettingsStore, ThemeSettings } from '../theme/settings-store.js'
+import type { FileThemeSettingsStore } from '../theme/settings-store.js'
 import {
   toKomariLoadRecords,
   toKomariNode,
@@ -47,7 +47,6 @@ interface ThemeSource {
   themeTitle?: string
   themeShort?: string
   themeSettings?: Record<string, unknown> | null
-  themeSettingsOverrides?: ThemeSettings
   themeSettingsStore?: FileThemeSettingsStore
   themeManifest?: Record<string, unknown> | null
 }
@@ -657,7 +656,6 @@ export class KomariDataService {
     const base = {
       ...(this.themeSource?.themeSettings ?? {}),
       ...(await this.readStoredThemeSettings()),
-      ...(this.themeSource?.themeSettingsOverrides ?? {}),
     }
     if (!isJunimoTheme(this.themeSource)) return base
     if (base.homepagePingBindings !== undefined) return base

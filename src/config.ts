@@ -1,20 +1,15 @@
-import path from 'node:path'
-
-import { parseThemeSettingsJson, type ThemeSettings } from './theme/settings-store.js'
-
 export interface AppConfig {
   mmwxOrigin: string
   probeToken: string
   themeRepo: string
   themeRef: string
-  themeBuild: string | undefined
   port: number
   cacheTtlMs: number
-  dataDir: string
   adminToken?: string
-  themeSettingsFile: string
-  themeSettingsJson?: ThemeSettings
 }
+
+export const RUNTIME_DIR = '/data'
+export const THEME_SETTINGS_PATH = `${RUNTIME_DIR}/theme-settings.json`
 
 export function describeConfig(config: AppConfig): string {
   return [
@@ -22,13 +17,9 @@ export function describeConfig(config: AppConfig): string {
     'PROBE_TOKEN=[REDACTED]',
     `THEME_REPO=${config.themeRepo}`,
     `THEME_REF=${config.themeRef}`,
-    `THEME_BUILD=${config.themeBuild || 'auto'}`,
     `PORT=${config.port}`,
     `CACHE_TTL=${config.cacheTtlMs / 1000}s`,
-    `DATA_DIR=${config.dataDir}`,
     `ADMIN_TOKEN=${config.adminToken ? '[REDACTED]' : 'disabled'}`,
-    `THEME_SETTINGS_FILE=${config.themeSettingsFile}`,
-    `THEME_SETTINGS_JSON=${config.themeSettingsJson ? '[SET]' : 'unset'}`,
   ].join(' ')
 }
 
@@ -116,32 +107,13 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   if (!Number.isSafeInteger(cacheTtlMs)) {
     throw new ConfigError('CACHE_TTL is too large')
   }
-  const configuredDataDir = env.DATA_DIR?.trim()
-  const dataDir = configuredDataDir ? path.resolve(configuredDataDir) : '/data'
-  const themeSettingsFileRaw = env.THEME_SETTINGS_FILE?.trim()
-  const themeSettingsFile = themeSettingsFileRaw
-    ? path.resolve(themeSettingsFileRaw)
-    : `${dataDir.replace(/[\\/]$/, '').replaceAll('\\', '/')}/theme-settings.json`
-  const themeSettingsJsonRaw = env.THEME_SETTINGS_JSON?.trim()
-  let themeSettingsJson: ThemeSettings | undefined
-  if (themeSettingsJsonRaw) {
-    try {
-      themeSettingsJson = parseThemeSettingsJson(themeSettingsJsonRaw, 'THEME_SETTINGS_JSON')
-    } catch (error) {
-      throw new ConfigError(error instanceof Error ? error.message : 'THEME_SETTINGS_JSON must be valid JSON')
-    }
-  }
   return {
     mmwxOrigin,
     probeToken,
     themeRepo,
     themeRef,
-    themeBuild: env.THEME_BUILD?.trim() || undefined,
     port,
     cacheTtlMs,
-    dataDir,
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
-    themeSettingsFile,
-    themeSettingsJson,
   }
 }

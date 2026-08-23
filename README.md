@@ -28,7 +28,7 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
 - Komari 公开只读兼容层：基于标准探针数据做结构转换，生成常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
-- 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin/settings/theme` 轻量配置页，并将配置保存到 `/data/theme-settings.json`
+- 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin/settings/theme` 轻量配置页，并将配置保存到容器内部运行目录
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
 - 只读安全边界：`PROBE_TOKEN` 仅用于容器访问已配置主控，不暴露给浏览器，不提供登录、管理、写入或节点修改能力
@@ -58,18 +58,14 @@ services:
     environment:
       - MMWX_ORIGIN=https://panel.example.com
       - PROBE_TOKEN=replace-with-probe-token
-      - THEME_REPO=
+      - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
       - PORT=8080
       - CACHE_TTL=5
-      # 可选：启用 /admin/settings/theme 写入保存
-      # - ADMIN_TOKEN=replace-with-random-admin-token
-    volumes:
-      - theme-data:/data
-
-volumes:
-  theme-data:
+      - ADMIN_TOKEN=replace-with-random-admin-token
 ```
+
+容器会在内部运行目录保存主题构建产物和主题设置，不映射到宿主机；删除容器后这些运行时数据会随容器一并删除。
 
 启动服务：
 
@@ -89,11 +85,11 @@ docker run -d \
   -p 8080:8080 \
   -e MMWX_ORIGIN="https://panel.example.com" \
   -e PROBE_TOKEN="replace-with-probe-token" \
-  -e THEME_REPO="" \
+  -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
   -e PORT=8080 \
   -e CACHE_TTL=5 \
-  -v mmwx-komari-theme-data:/data \
+  -e ADMIN_TOKEN="replace-with-random-admin-token" \
   ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
 ```
 
@@ -107,8 +103,13 @@ docker run -d \
   --name mmwx-komari-adapter \
   --restart unless-stopped \
   -p 8080:8080 \
-  --env-file .env.example \
-  -v mmwx-komari-theme-data:/data \
+  -e MMWX_ORIGIN="https://panel.example.com" \
+  -e PROBE_TOKEN="replace-with-probe-token" \
+  -e THEME_REPO="https://github.com/example/komari-theme" \
+  -e THEME_REF="main" \
+  -e PORT=8080 \
+  -e CACHE_TTL=5 \
+  -e ADMIN_TOKEN="replace-with-random-admin-token" \
   mmwx-komari-adapter
 ```
 
@@ -178,15 +179,17 @@ http://localhost:8080/admin/settings/theme
 
 页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
 
-没有 `configuration` 的主题会显示“当前主题未声明可配置项”，并提供高级 JSON 编辑入口。
+没有 `configuration` 的主题会显示“当前主题未声明可配置项”。
 
 ### 🧪 已实测主题仓库
 
-| 主题仓库 | 状态 | 主题配置 | 备注 |
-| --- | --- | --- |--- |
-| `https://github.com/jianmomo/komari-theme-Glassmorphism-Enhanced` | ✅ | ✅ |直接读取 `komari-theme.json`，支持管理型配置页 |
-| `https://github.com/vaspike/junimo` | ✅ | ❌ |直接读取 `komari-theme.json`，支持公开前台 |
-| `https://github.com/sunnyhmz7010/komari-theme-adhesive-note` | ✅ | ❌ |直接读取 `komari-theme.json`，支持公开前台 |
+| 主题仓库 | 页面显示 | 数据兼容性 | 主题配置 |
+| --- | --- | --- | --- |
+| `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | 待实测 | 待实测 | 待实测（仓库声明有配置项） |
+| `https://github.com/stqfdyr/komari-theme-adhesive-note` | ✅ | ✅ 全部支持 | — 主题本身无配置项 |
+| `https://github.com/vaspike/junimo` | ✅ | ❌ 不支持 Swap | — 主题本身无配置项 |
+
+主题配置状态说明：`✅ 有配置项，已兼容`；`❌ 有配置项，未兼容`；`— 主题本身无配置项`。
 
 ### 📋 环境变量
 
@@ -194,15 +197,11 @@ http://localhost:8080/admin/settings/theme
 | --- | --- | --- | --- |
 | `MMWX_ORIGIN` | 是 | - | 妙妙屋 X 主控地址。生产环境必须使用 HTTPS；仅 `localhost` 和 `127.0.0.1` 允许 HTTP |
 | `PROBE_TOKEN` | 是 | - | 主控“系统设置 → 探针”生成的独立探针访问密钥，仅作为 `X-MMwx-Probe-Token` 转发给主控 |
-| `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/<owner>/<repo>` |
+| `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/example/komari-theme` |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
-| `THEME_BUILD` | 否 | - | 自定义主题构建命令；未设置时使用主题仓库 `package.json` 中的 `build` 脚本 |
 | `PORT` | 否 | `8080` | 容器内 HTTP 监听端口 |
 | `CACHE_TTL` | 否 | `5` | MMWX 探针数据缓存时间，单位秒 |
-| `DATA_DIR` | 否 | `/data` | 主题构建产物和运行数据目录，容器部署时建议挂载持久化卷 |
-| `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用主题配置写入 |
-| `THEME_SETTINGS_FILE` | 否 | `/data/theme-settings.json` | 主题配置持久化 JSON 文件路径 |
-| `THEME_SETTINGS_JSON` | 否 | - | 主题配置 JSON 对象，会覆盖文件配置，适合 Docker 环境强制指定少量设置 |
+| `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用主题配置写入。配置仅保存在容器内部运行目录 |
 
 ## 🧠 功能细节
 

@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 
-import type { AppConfig } from '../config.js'
+import { RUNTIME_DIR, type AppConfig } from '../config.js'
 import { createLogger, type Logger } from '../log.js'
 import { acquireTheme } from './repository.js'
 import { buildTheme, detectBuildPlan } from './builder.js'
@@ -114,7 +114,7 @@ export async function readThemeMetadata(repoDir: string): Promise<{ short?: stri
 
 export async function loadTheme(config: AppConfig, logger: Logger = createLogger([config.probeToken])): Promise<LoadedTheme> {
   const source: ThemeSource = { repoUrl: config.themeRepo, ref: config.themeRef }
-  const themesDir = path.resolve(config.dataDir, 'themes')
+  const themesDir = path.resolve(RUNTIME_DIR, 'themes')
   const currentDir = path.join(themesDir, 'current')
   await mkdir(themesDir, { recursive: true })
   const workspace = await mkdtemp(path.join(themesDir, '.theme-'))
@@ -122,7 +122,7 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
   const outputDir = path.join(workspace, 'output')
 
   try {
-    logger.info('主题加载开始', { repository: source.repoUrl, ref: source.ref, dataDir: config.dataDir })
+    logger.info('主题加载开始', { repository: source.repoUrl, ref: source.ref })
     await acquireTheme(source, repoDir, logger)
     const metadata = await readThemeMetadata(repoDir)
     logger.info('主题配置声明已读取', {

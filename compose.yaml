@@ -5,10 +5,11 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    env_file:
-      - .env
-    volumes:
-      - theme-data:/data
-
-volumes:
-  theme-data:
+    environment:
+      - MMWX_ORIGIN=https://panel.example.com
+      - PROBE_TOKEN=replace-with-probe-token
+      - THEME_REPO=https://github.com/example/komari-theme
+      - THEME_REF=main
+      - PORT=8080
+      - CACHE_TTL=5
+      - ADMIN_TOKEN=replace-with-random-admin-token
