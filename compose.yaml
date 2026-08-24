@@ -10,5 +10,4 @@ services:
       - PROBE_TOKEN=replace-with-probe-token
       - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
-      - PORT=8080
       - ADMIN_TOKEN=replace-with-random-admin-token

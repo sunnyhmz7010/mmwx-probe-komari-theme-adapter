@@ -61,7 +61,6 @@ services:
       - PROBE_TOKEN=replace-with-probe-token
       - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
-      - PORT=8080
       - ADMIN_TOKEN=replace-with-random-admin-token
 ```
 
@@ -87,7 +86,6 @@ docker run -d \
   -e PROBE_TOKEN="replace-with-probe-token" \
   -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
-  -e PORT=8080 \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
   ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
 ```
@@ -106,7 +104,6 @@ docker run -d \
   -e PROBE_TOKEN="replace-with-probe-token" \
   -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
-  -e PORT=8080 \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
   mmwx-komari-adapter
 ```
@@ -206,13 +203,14 @@ http://localhost:8080/admin
 
 ### 📋 环境变量
 
+> 容器内固定监听 `8080` 端口，不再提供 `PORT` 环境变量；如需更换对外端口，调整端口映射左侧端口即可，例如 `"9000:8080"`。
+
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `MMWX_ORIGIN` | 是 | - | 妙妙屋 X 主控地址。生产环境必须使用 HTTPS；仅 `localhost` 和 `127.0.0.1` 允许 HTTP |
 | `PROBE_TOKEN` | 是 | - | 主控“系统设置 → 探针”生成的独立探针访问密钥，仅作为 `X-MMwx-Probe-Token` 转发给主控 |
 | `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/example/komari-theme` |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
-| `PORT` | 否 | `8080` | 容器内 HTTP 监听端口 |
 | `ADMIN_TOKEN` | 否 | - | `/admin` 管理员验证使用的 Token；未设置时禁用验证和主题配置写入。适配器仅保存签名会话 Cookie，配置仍保存在容器内部运行目录 |
 
 ## 🧠 功能细节

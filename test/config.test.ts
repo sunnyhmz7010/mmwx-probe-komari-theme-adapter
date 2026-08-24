@@ -57,7 +57,6 @@ test('loads defaults and normalizes the origin', () => {
     probeToken: validEnv.PROBE_TOKEN,
     themeRepo: validEnv.THEME_REPO,
     themeRef: 'main',
-    port: 8080,
     adminToken: undefined,
   })
 })
@@ -66,7 +65,6 @@ test('describes the complete startup configuration without exposing the probe to
   const config = loadConfig({
     ...validEnv,
     THEME_REF: 'v1.2.3',
-    PORT: '9090',
     ADMIN_TOKEN: 'admin-secret',
   })
 
@@ -75,7 +73,7 @@ test('describes the complete startup configuration without exposing the probe to
   assert.match(summary, /PROBE_TOKEN=\[REDACTED\]/)
   assert.match(summary, /THEME_REPO=https:\/\/github\.com\/example\/theme/)
   assert.match(summary, /THEME_REF=v1\.2\.3/)
-  assert.match(summary, /PORT=9090/)
+  assert.equal(summary.includes('PORT'), false)
   assert.match(summary, /ADMIN_TOKEN=\[REDACTED\]/)
   assert.match(summary, /VERSION=v\d+\.\d+\.\d+/)
   assert.equal(summary.includes('CACHE_TTL'), false)
@@ -92,24 +90,13 @@ test('ignores removed path and build environment variables', () => {
     ...validEnv,
     THEME_REF: 'v1.2.3',
     THEME_BUILD: 'npm run build',
-    PORT: '9090',
     DATA_DIR: './runtime-data',
     THEME_SETTINGS_FILE: './runtime-data/custom-theme-settings.json',
     THEME_SETTINGS_JSON: '{"showNotice":true}',
   })
 
   assert.equal(config.themeRef, 'v1.2.3')
-  assert.equal(config.port, 9090)
   assert.equal(config.adminToken, undefined)
-})
-
-test('rejects malformed integer configuration', () => {
-  for (const [key, value] of [['PORT', '8.5'], ['PORT', 'not-a-number']] as const) {
-    assert.throws(
-      () => loadConfig({ ...validEnv, [key]: value }),
-      (error: unknown) => isConfigError(error) && new RegExp(key).test(error.message),
-    )
-  }
 })
 
 test('rejects malformed repository URLs', () => {
@@ -130,7 +117,7 @@ test('never includes the token in configuration errors', () => {
   const token = 'do-not-leak-this-token'
 
   assert.throws(
-    () => loadConfig({ ...validEnv, PROBE_TOKEN: token, PORT: 'invalid' }),
+    () => loadConfig({ ...validEnv, PROBE_TOKEN: token, MMWX_ORIGIN: 'http://panel.example.com' }),
     (error: unknown) => isConfigError(error) && !error.message.includes(token),
   )
 })

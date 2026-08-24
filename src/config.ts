@@ -5,12 +5,12 @@ export interface AppConfig {
   probeToken: string
   themeRepo: string
   themeRef: string
-  port: number
   adminToken?: string
 }
 
 export const RUNTIME_DIR = '/data'
 export const THEME_SETTINGS_PATH = `${RUNTIME_DIR}/theme-settings.json`
+export const HTTP_PORT = 8080
 
 export function describeConfig(config: AppConfig): string {
   return [
@@ -18,7 +18,7 @@ export function describeConfig(config: AppConfig): string {
     'PROBE_TOKEN=[REDACTED]',
     `THEME_REPO=${config.themeRepo}`,
     `THEME_REF=${config.themeRef}`,
-    `PORT=${config.port}`,
+
     `ADMIN_TOKEN=${config.adminToken ? '[REDACTED]' : 'disabled'}`,
     `VERSION=${ADAPTER_VERSION}`,
   ].join(' ')
@@ -100,16 +100,11 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   const probeToken = required(env, 'PROBE_TOKEN')
   const themeRepo = parseThemeRepo(required(env, 'THEME_REPO'))
   const themeRef = parseThemeRef(env.THEME_REF?.trim() || 'main')
-  const port = parsePositiveInteger(env, 'PORT', 8080)
-  if (port > 65535) {
-    throw new ConfigError('PORT must be between 1 and 65535')
-  }
   return {
     mmwxOrigin,
     probeToken,
     themeRepo,
     themeRef,
-    port,
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
   }
 }

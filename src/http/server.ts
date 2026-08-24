@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import WebSocket, { WebSocketServer } from 'ws'
 
 import type { AppConfig } from '../config.js'
+import { HTTP_PORT } from '../config.js'
 import { KomariDataService } from '../komari/service.js'
 import type { LoadedTheme } from '../theme/types.js'
 import type { ApiRouter } from './api.js'
@@ -17,7 +18,7 @@ export interface ServerHandle {
   close(): Promise<void>
 }
 
-export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: ApiRouter, hub: ProbeStreamRelay, logger: Logger = noopLogger): ServerHandle {
+export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: ApiRouter, hub: ProbeStreamRelay, logger: Logger = noopLogger, listenPort: number = HTTP_PORT): ServerHandle {
   const snapshotService = new KomariDataService(hub)
   const clientsWss = new WebSocketServer({ noServer: true })
   const streamWss = new WebSocketServer({ noServer: true })
@@ -87,7 +88,7 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
 
   return {
     listen: async () => {
-      await new Promise<void>((resolve) => server.listen(config.port, resolve))
+      await new Promise<void>((resolve) => server.listen(listenPort, resolve))
     },
     close: async () => {
       for (const ws of clients) ws.close()

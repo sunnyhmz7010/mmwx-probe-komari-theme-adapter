@@ -26,7 +26,6 @@ const baseConfig: AppConfig = {
   probeToken: 'probe-secret',
   themeRepo: 'https://github.com/acme/theme',
   themeRef: 'main',
-  port: 0,
 }
 
 async function fixture(name: string): Promise<Fixture> {
@@ -75,7 +74,7 @@ async function runObservedFixture(file: string): Promise<void> {
     indexPath: path.join(process.cwd(), 'package.json'),
     source: { repoUrl: 'https://github.com/acme/theme', ref: 'test' },
   }
-  const server = createHttpServer({ ...baseConfig, port }, theme, api, hub)
+  const server = createHttpServer(baseConfig, theme, api, hub, undefined, port)
 
   try {
     await server.listen()

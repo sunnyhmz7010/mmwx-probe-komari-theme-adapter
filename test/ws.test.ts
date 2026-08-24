@@ -20,7 +20,6 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     probeToken: 'probe-secret',
     themeRepo: 'https://github.com/acme/theme',
     themeRef: 'main',
-    port: 0,
     ...overrides,
   }
 }
@@ -87,7 +86,7 @@ test('serves /ping health check as plain text pong', async () => {
   } as never
   const hub = new ProbeStreamRelay(mmwx)
   const api = createApiRouter(new KomariDataService(hub))
-  const serverHandle = createHttpServer(config({ port }), theme, api, hub)
+  const serverHandle = createHttpServer(config(), theme, api, hub, undefined, port)
 
   try {
     await serverHandle.listen()
@@ -112,7 +111,7 @@ test('serves static assets and SPA fallback safely', async () => {
   } as never
   const hub = new ProbeStreamRelay(mmwx)
   const api = createApiRouter(new KomariDataService(hub))
-  const serverHandle = createHttpServer(config({ port }), theme, api, hub)
+  const serverHandle = createHttpServer(config(), theme, api, hub, undefined, port)
 
   try {
     await serverHandle.listen()
@@ -190,7 +189,7 @@ test('routes websocket clients and broadcasts a shared stream hub connection', a
   const hub = new ProbeStreamRelay(mmwx)
   const api = createApiRouter(new KomariDataService(hub))
   const port = await reservePort()
-  const serverHandle = createHttpServer(config({ port }), theme, api, hub)
+  const serverHandle = createHttpServer(config(), theme, api, hub, undefined, port)
 
   try {
     await serverHandle.listen()
