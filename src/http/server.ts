@@ -9,6 +9,7 @@ import type { ApiRouter } from './api.js'
 import { dispatchRpc2, getAdminSessionMe } from './api.js'
 import { serveStatic } from './static.js'
 import type { ProbeStreamRelay } from '../mmwx/stream-relay.js'
+import { ADAPTER_VERSION } from '../version.js'
 
 export interface ServerHandle {
   listen(): Promise<void>
@@ -242,6 +243,7 @@ textarea{min-height:110px;resize:vertical}
 <header>
 <h1>MMWX Probe Komari Theme Adapter Settings</h1>
 <div class="meta">
+<span>版本：<b>${htmlEscape(ADAPTER_VERSION)}</b></span>
 <span>当前主题：<b>${title}</b></span>
 <span>仓库：<a href="${htmlEscape(repoUrl)}" target="_blank" rel="noreferrer">${htmlEscape(repoDisplay)}</a> @ ${htmlEscape(theme.source.ref)}</span>
 </div>

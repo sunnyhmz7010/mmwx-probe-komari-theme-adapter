@@ -1,3 +1,5 @@
+import { ADAPTER_VERSION } from './version.js'
+
 export interface AppConfig {
   mmwxOrigin: string
   probeToken: string
@@ -18,6 +20,7 @@ export function describeConfig(config: AppConfig): string {
     `THEME_REF=${config.themeRef}`,
     `PORT=${config.port}`,
     `ADMIN_TOKEN=${config.adminToken ? '[REDACTED]' : 'disabled'}`,
+    `VERSION=${ADAPTER_VERSION}`,
   ].join(' ')
 }
 

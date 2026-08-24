@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-
 import type { MmwxMetricPoint, MmwxProbeSeries, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbeLicenseBadge, ProbePayload, ProbePingSeries, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
 import type { FileThemeSettingsStore } from '../theme/settings-store.js'
+import { ADAPTER_VERSION } from '../version.js'
 import {
   toKomariLoadRecords,
   toKomariNode,
@@ -56,7 +55,6 @@ interface SnapshotValue {
   payload: ProbePayload
 }
 
-const PACKAGE_VERSION = readPackageVersion()
 const BUILD_HASH = process.env.GITHUB_SHA?.trim() || process.env.GIT_COMMIT?.trim() || 'unknown'
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -395,17 +393,6 @@ function loadAverage(value: unknown): { load1?: number; load5?: number; load15?:
   return Object.keys(load).length > 0 ? load : undefined
 }
 
-function readPackageVersion(): string {
-  try {
-    const raw = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')
-    const parsed = JSON.parse(raw) as { version?: string }
-    const version = parsed.version?.trim()
-    return version || '0.0.0'
-  } catch {
-    return '0.0.0'
-  }
-}
-
 export class KomariServiceError extends Error {
   public readonly statusCode = 502
 
@@ -519,7 +506,7 @@ export class KomariDataService {
 
   public async getVersion(): Promise<KomariVersionInfo> {
     return {
-      version: `v${PACKAGE_VERSION}`,
+      version: ADAPTER_VERSION,
       hash: BUILD_HASH,
     }
   }

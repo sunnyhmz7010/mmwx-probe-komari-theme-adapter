@@ -77,6 +77,7 @@ test('describes the complete startup configuration without exposing the probe to
   assert.match(summary, /THEME_REF=v1\.2\.3/)
   assert.match(summary, /PORT=9090/)
   assert.match(summary, /ADMIN_TOKEN=\[REDACTED\]/)
+  assert.match(summary, /VERSION=v\d+\.\d+\.\d+/)
   assert.equal(summary.includes('CACHE_TTL'), false)
   assert.equal(summary.includes('THEME_BUILD'), false)
   assert.equal(summary.includes('DATA_DIR'), false)

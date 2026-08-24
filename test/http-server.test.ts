@@ -19,6 +19,7 @@ test('admin keeps token card and appends frontend theme management notice for su
 
   assert.match(html, /ADMIN_TOKEN/)
   assert.match(html, /当前主题未声明可配置项/)
+  assert.match(html, /版本：<b>v\d+\.\d+\.\d+<\/b>/)
   assert.match(html, /"frontendThemeManagement":true/)
   assert.match(html, /\/\?view=theme-manage/)
 })
