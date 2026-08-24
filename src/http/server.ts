@@ -322,22 +322,22 @@ async function boot(){
   if(type==="redirect"){app.innerHTML=authCard()+'<div class="card"><div class="empty"><h2>主题配置使用跳转页面</h2><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p></div></div>';attachAuth();return}
   if(type==="raw"){app.innerHTML=authCard()+'<div class="card"><iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:0;display:block" srcdoc="'+html(cfg.data||"")+'"></iframe></div>';attachAuth();return}
   const fields=Array.isArray(cfg.data)?cfg.data:[];
-  app.innerHTML=authCard()+saveCard()+'<div class="card"><div class="card-head"><span class="dot"></span>主题配置</div><div class="fields">'+fields.map((f)=>renderField(f,settings)).join("")+'</div></div>';
+  app.innerHTML=authCard()+'<div class="card"><div class="card-head"><span class="dot"></span>主题配置</div><div class="fields">'+fields.map((f)=>renderField(f,settings)).join("")+'</div><div class="actions"><button class="btn" id="save" disabled>保存主题配置</button><p class="msg" id="save-msg"></p></div></div>';
   attachAuth();
   attachSave();
  }catch(e){app.innerHTML='<div class="card"><div class="empty"><h2>加载失败</h2><p class="msg error">'+html(e.message||e)+'</p></div></div>'}
 }
- function authCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>管理员验证</div><div class="actions"><div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button class="btn" id="verify">验证</button><p class="msg" id="auth-msg"></p></div></div>'}
- function saveCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>保存</div><div class="actions"><button class="btn" id="save" disabled>保存主题配置</button><p class="msg" id="save-msg"></p></div></div>'}
+ function authCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>管理员验证</div><div class="actions"><div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button class="btn" id="verify">验证</button><button class="btn" id="logout" disabled>退出登录</button><p class="msg" id="auth-msg"></p></div></div>'}
+ function flash(element,className,text){if(!element)return;clearTimeout(element._timer);element.className="msg "+className;element.textContent=text;element._timer=setTimeout(()=>{element.textContent="";element.className="msg"},3000)}
  function updateAuthState(){
-  const verify=document.getElementById("verify"), save=document.getElementById("save"), msg=document.getElementById("auth-msg");
+  const verify=document.getElementById("verify"), logout=document.getElementById("logout"), save=document.getElementById("save");
   if(verify)verify.disabled=verified;
+  if(logout)logout.disabled=!verified;
   if(save)save.disabled=!verified;
-  if(verified&&msg){msg.className="msg ok";msg.textContent="验证成功，登录态已建立"}
  }
  function attachAuth(){
-  const button=document.getElementById("verify");
-  if(!button){return}
+  const button=document.getElementById("verify"), logout=document.getElementById("logout");
+  if(!button||!logout){return}
   updateAuthState();
   button.onclick=async()=>{
    const msg=document.getElementById("auth-msg");
@@ -347,7 +347,19 @@ async function boot(){
     await json("/api/admin/auth/verify",{method:"POST",headers:{"Authorization":"Bearer "+token}});
     verified=true;
     updateAuthState();
-   }catch(e){verified=false;updateAuthState();msg.className="msg error";msg.textContent=e.message||e}
+    flash(msg,"ok","验证成功，登录态已建立");
+   }catch(e){verified=false;updateAuthState();flash(msg,"error",e.message||e)}
+  };
+  logout.onclick=async()=>{
+   const msg=document.getElementById("auth-msg");
+   try{
+    await json("/api/admin/auth/logout",{method:"POST"});
+    verified=false;
+    const token=document.getElementById("admin-token");
+    if(token)token.value="";
+    updateAuthState();
+    flash(msg,"ok","已退出登录");
+   }catch(e){flash(msg,"error",e.message||e)}
   };
  }
  function attachSave(){
@@ -359,8 +371,8 @@ async function boot(){
     if(!verified)throw new Error("请先验证 ADMIN_TOKEN");
     const body=collect();
     await json("/api/admin/theme/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    msg.className="msg ok";msg.textContent="主题配置已保存";
-   }catch(e){msg.className="msg error";msg.textContent=e.message||e}
+    flash(msg,"ok","主题配置已保存");
+   }catch(e){flash(msg,"error",e.message||e)}
   };
  }
 boot();

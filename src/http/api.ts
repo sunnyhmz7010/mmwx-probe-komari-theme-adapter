@@ -146,6 +146,11 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           )
         }
 
+        if (url.pathname === '/api/admin/auth/logout' && request.method === 'POST') {
+          logger.info('管理员退出登录', { remoteAddress: request.socket.remoteAddress })
+          return json(response, 200, envelope(null, '已退出登录'), { 'Set-Cookie': clearAdminSessionCookie(request) })
+        }
+
         if (url.pathname === '/api/admin/theme/settings' && request.method === 'POST') {
           if (!options.adminToken) {
             logger.warn('主题配置写入被拒绝', { reason: 'ADMIN_TOKEN 未配置', remoteAddress: request.socket.remoteAddress })
@@ -243,6 +248,12 @@ function buildAdminSessionCookie(request: IncomingMessage, adminToken: string): 
   const forwardedProto = request.headers['x-forwarded-proto']
   const isSecure = (request.socket as { encrypted?: boolean }).encrypted === true || forwardedProto === 'https'
   return `${ADMIN_SESSION_COOKIE}=${value}; Max-Age=${ADMIN_SESSION_TTL_SECONDS}; Path=/; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`
+}
+
+function clearAdminSessionCookie(request: IncomingMessage): string {
+  const forwardedProto = request.headers['x-forwarded-proto']
+  const isSecure = (request.socket as { encrypted?: boolean }).encrypted === true || forwardedProto === 'https'
+  return `${ADMIN_SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`
 }
 
 function readCookie(request: IncomingMessage, name: string): string | undefined {

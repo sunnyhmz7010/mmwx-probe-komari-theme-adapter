@@ -1110,6 +1110,54 @@ test('saving theme settings establishes a browser session for frontend theme man
   }, { adminToken: 'admin-secret' })
 })
 
+test('admin logout clears the browser session and blocks subsequent theme writes', async () => {
+  const logs: string[] = []
+  await withApi(fakeService(), async (baseUrl) => {
+    const logoutBeforeLogin = await request(baseUrl, '/api/admin/auth/logout', { method: 'POST' })
+    assert.equal(logoutBeforeLogin.status, 200)
+
+    const verified = await request(baseUrl, '/api/admin/auth/verify', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-secret' },
+    })
+    const setCookie = Array.isArray(verified.headers['set-cookie'])
+      ? verified.headers['set-cookie'][0]
+      : verified.headers['set-cookie']
+    const sessionCookie = setCookie?.split(';', 1)[0]
+    assert.ok(sessionCookie)
+
+    const logout = await request(baseUrl, '/api/admin/auth/logout', {
+      method: 'POST',
+      headers: { Cookie: sessionCookie },
+    })
+    assert.equal(logout.status, 200)
+    assert.deepEqual(logout.body, { status: 'success', message: '已退出登录', data: null })
+    const clearedCookie = Array.isArray(logout.headers['set-cookie'])
+      ? logout.headers['set-cookie'][0]
+      : logout.headers['set-cookie']
+    assert.match(clearedCookie ?? '', /^mmwx_admin_session=; Max-Age=0; Path=\/; HttpOnly; SameSite=Lax$/)
+
+    const me = await request(baseUrl, '/api/me', { headers: { Cookie: 'mmwx_admin_session=' } })
+    assert.equal((me.body as { logged_in?: boolean }).logged_in, false)
+
+    const save = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Cookie: 'mmwx_admin_session=', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ afterLogout: true }),
+    })
+    assert.equal(save.status, 401)
+    assert.deepEqual(save.body, { status: 'error', message: '请先完成管理员验证', data: null })
+  }, {
+    adminToken: 'admin-secret',
+    logger: {
+      info(message: string) { logs.push(`info:${message}`) },
+      warn(message: string) { logs.push(`warn:${message}`) },
+      error(message: string) { logs.push(`error:${message}`) },
+    },
+  })
+  assert.ok(logs.some((line) => line.includes('管理员退出登录')))
+})
+
 test('theme settings persistence failures are logged', async () => {
   const logs: string[] = []
   await withApi(fakeService({
