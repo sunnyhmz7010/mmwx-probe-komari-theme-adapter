@@ -975,6 +975,7 @@ test('API routes save theme settings only with a verified admin session', async 
       body: JSON.stringify({ showNotice: true }),
     })
     assert.equal(missing.status, 401)
+    assert.deepEqual(missing.body, { status: 'error', message: '请先完成管理员验证', data: null })
 
     const wrong = await request(baseUrl, '/api/admin/theme/settings', {
       method: 'POST',
@@ -989,6 +990,7 @@ test('API routes save theme settings only with a verified admin session', async 
       body: JSON.stringify({ showNotice: true }),
     })
     assert.equal(directTokenSave.status, 401)
+    assert.deepEqual(directTokenSave.body, { status: 'error', message: '请先完成管理员验证', data: null })
     assert.equal(directTokenSave.headers['set-cookie'], undefined)
     assert.deepEqual(saved, [])
 
@@ -1023,7 +1025,7 @@ test('admin token verification is independent and rejects wrong tokens even with
       headers: { Authorization: 'Bearer wrong' },
     })
     assert.equal(wrong.status, 401)
-    assert.deepEqual(wrong.body, { status: 'error', message: 'unauthorized', data: null })
+    assert.deepEqual(wrong.body, { status: 'error', message: '管理员 Token 无效', data: null })
     assert.equal(wrong.headers['set-cookie'], undefined)
 
     const verified = await request(baseUrl, '/api/admin/auth/verify', {
@@ -1051,6 +1053,7 @@ test('admin token verification is independent and rejects wrong tokens even with
       headers: { Authorization: 'Bearer wrong', Cookie: sessionCookie },
     })
     assert.equal(wrongWithSession.status, 401)
+    assert.deepEqual(wrongWithSession.body, { status: 'error', message: '管理员 Token 无效', data: null })
     assert.equal(wrongWithSession.headers['set-cookie'], undefined)
   }, {
     adminToken: 'admin-secret',

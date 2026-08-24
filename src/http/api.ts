@@ -135,7 +135,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           }
           if (!hasAdminToken(request, options.adminToken)) {
             logger.warn('管理员 Token 验证失败', { reason: 'Token 不匹配', remoteAddress: request.socket.remoteAddress })
-            return json(response, 401, envelope(null, 'unauthorized', 'error'))
+            return json(response, 401, envelope(null, '管理员 Token 无效', 'error'))
           }
           logger.info('管理员 Token 验证成功', { remoteAddress: request.socket.remoteAddress })
           return json(
@@ -153,7 +153,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           }
           if (!hasAdminSession(request, options.adminToken)) {
             logger.warn('主题配置写入被拒绝', { reason: '未建立管理员会话', remoteAddress: request.socket.remoteAddress })
-            return json(response, 401, envelope(null, 'unauthorized', 'error'))
+            return json(response, 401, envelope(null, '请先完成管理员验证', 'error'))
           }
           const body = await readJsonObject(request)
           let result: unknown
