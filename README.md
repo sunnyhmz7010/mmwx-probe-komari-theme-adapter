@@ -28,7 +28,7 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
 - Komari 公开只读兼容层：基于标准探针数据做结构转换，生成常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
-- 主题配置管理：读取主题 `komari-theme.json` 配置声明，提供 `/admin` 轻量配置页，并将配置保存到容器内部运行目录
+- 主题配置管理：保留 `/admin` 原有入口；支持 `komari-theme.json` 托管配置主题，也兼容通过 `/?view=theme-manage` 提供前端配置页的主题
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
 - 主控降载：通过共享流中继维护一条到主控的探针 WebSocket，广播给所有访客并复用最近快照帧，访客数增加不再按比例增加主控连接与实时查询
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
@@ -139,7 +139,7 @@ docker run -d \
 
 - `GET /api/nodes`
 - `GET /api/public`
-- `GET /api/me`
+- `GET /api/me`（建立适配器主题配置会话后返回已登录状态）
 - `GET /api/records/ping`
 - `GET /api/records/load`
 - `POST /api/rpc2`
@@ -173,13 +173,17 @@ docker run -d \
 
 ### 🎨 主题配置
 
-容器会读取当前主题仓库根目录的 `komari-theme.json`。如果主题声明了 `configuration`，可以打开：
+容器会读取当前主题仓库根目录的 `komari-theme.json`。原有托管配置主题仍然通过 `/admin` 设置：
 
 ```text
 http://localhost:8080/admin
 ```
 
-页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。没有 `configuration` 的主题会显示“当前主题未声明可配置项”。`/admin` 之外的子路径一律返回 404。
+页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。保存写入需要设置环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。
+
+对于没有 `configuration`、但自身提供 `/?view=theme-manage` 配置页的主题（例如 Lumina、LuminaPlus 和 Junimo），`/admin` 会保留原有的 `ADMIN_TOKEN` 输入框，并在“当前主题未声明可配置项”提示后追加前端配置入口。首次在 `/admin` 输入 `ADMIN_TOKEN` 保存一次后，适配器会签发仅包含签名会话值的 `HttpOnly` Cookie；之后访问 `/?view=theme-manage` 时，主题通过 `/api/me` 可以得到已登录状态，并可使用该会话保存配置。适配器不会修改主题源码，也不会把 `ADMIN_TOKEN` 写入 Cookie。
+
+普通 `configuration` 主题的行为不变；无托管配置且未识别到前端配置入口的主题只保留原有提示。该会话只用于适配器自身的主题配置管理，不提供完整 Komari 后台登录能力。`/admin` 之外的子路径一律返回 404。
 
 ### 🧪 已实测主题仓库
 
@@ -188,9 +192,9 @@ http://localhost:8080/admin
 | `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
-| `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
-| `https://github.com/stqfdyr/komari-theme-Lumina` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
-| `https://github.com/shanyang242/Komari-Theme-LuminaPlus` | main | ✅ | ⚠️ 提示“未配置首页 Ping” | 主题本身无配置项 |
+| `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 使用 `/?view=theme-manage` |
+| `https://github.com/stqfdyr/komari-theme-Lumina` | main | ✅ | ✅ 全部支持 | 使用 `/?view=theme-manage` |
+| `https://github.com/shanyang242/Komari-Theme-LuminaPlus` | main | ✅ | ⚠️ 提示“未配置首页 Ping” | 使用 `/?view=theme-manage` |
 | `https://github.com/lyimoexiao/komari-theme-naive` | master | ❌ 容器无法启动 | ❌ 容器无法启动 | ❌ 容器无法启动 |
 | `https://github.com/tonyliuzj/komari-next` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 
@@ -205,7 +209,7 @@ http://localhost:8080/admin
 | `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/example/komari-theme` |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
 | `PORT` | 否 | `8080` | 容器内 HTTP 监听端口 |
-| `ADMIN_TOKEN` | 否 | - | 主题配置页保存操作的管理 Token；未设置时禁用主题配置写入。配置仅保存在容器内部运行目录 |
+| `ADMIN_TOKEN` | 否 | - | 主题配置页首次保存使用的管理 Token；未设置时禁用主题配置写入。适配器仅保存签名会话 Cookie，配置仍保存在容器内部运行目录 |
 
 ## 🧠 功能细节
 
@@ -217,7 +221,8 @@ http://localhost:8080/admin
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
 - 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成
 - 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
-- 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；保存操作必须携带 `ADMIN_TOKEN`
+- 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；保存操作可使用 `ADMIN_TOKEN` 或已建立的适配器主题配置会话
+- 前端主题配置会话：首次在 `/admin` 使用 `ADMIN_TOKEN` 保存后签发 7 天有效的 `HttpOnly`、`SameSite=Lax` 签名 Cookie；`/api/me`、HTTP RPC2 和 WebSocket RPC 会向已建立会话返回已登录状态，前端主题可复用 `/api/admin/theme/settings` 保存配置
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程
 - 输出校验：构建产物必须包含 `index.html`，并通过路径包含性和符号链接检查防止目录逃逸；构建命令失败时仅采用本次新生成的产物，拒绝误用构建前残留的旧产物

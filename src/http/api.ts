@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 import type { KomariDataService } from '../komari/service.js'
 import type { SeriesQuery } from '../mmwx/types.js'
+import type { KomariMeInfo } from '../komari/types.js'
 
 export interface ApiRouter {
   handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>
@@ -104,6 +106,9 @@ const JSON_HEADERS = {
   'Cache-Control': 'no-store',
 }
 
+const ADMIN_SESSION_COOKIE = 'mmwx_admin_session'
+const ADMIN_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
+
 export function createApiRouter(service: KomariDataService, options: ApiRouterOptions = {}): ApiRouter {
   return {
     async handle(request, response) {
@@ -113,7 +118,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
       try {
         if (url.pathname === '/api/rpc2') {
           if (request.method !== 'POST') return methodNotAllowed(response)
-          return await handleRpc2(service, request, response)
+          return await handleRpc2(service, request, response, getAdminSessionMe(request, options.adminToken))
         }
 
         if (url.pathname === '/api/version' && request.method === 'GET') {
@@ -122,9 +127,15 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
 
         if (url.pathname === '/api/admin/theme/settings' && request.method === 'POST') {
           if (!options.adminToken) return json(response, 403, envelope(null, '未配置 ADMIN_TOKEN，主题设置已禁用', 'error'))
-          if (!hasAdminToken(request, options.adminToken)) return json(response, 401, envelope(null, 'unauthorized', 'error'))
+          const tokenAuthenticated = hasAdminToken(request, options.adminToken)
+          if (!tokenAuthenticated && !hasAdminSession(request, options.adminToken)) {
+            return json(response, 401, envelope(null, 'unauthorized', 'error'))
+          }
           const body = await readJsonObject(request)
-          return json(response, 200, envelope(await service.updateThemeSettings(body)))
+          const headers = tokenAuthenticated
+            ? { 'Set-Cookie': buildAdminSessionCookie(request, options.adminToken) }
+            : undefined
+          return json(response, 200, envelope(await service.updateThemeSettings(body)), headers)
         }
 
         if (request.method !== 'GET') return methodNotAllowed(response)
@@ -151,7 +162,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           return json(response, 200, envelope(await service.getPublicSettings()))
         }
         if (url.pathname === '/api/me') {
-          return json(response, 200, await service.getMe())
+          return json(response, 200, getAdminSessionMe(request, options.adminToken) ?? await service.getMe())
         }
         if (url.pathname === '/api/records/ping') {
           return json(response, 200, await service.getPingHistory(queryFrom(url)))
@@ -176,7 +187,66 @@ function hasAdminToken(request: IncomingMessage, expected: string): boolean {
   const header = request.headers.authorization
   if (typeof header !== 'string') return false
   const match = header.match(/^Bearer\s+(.+)$/i)
-  return match?.[1] === expected
+  return match ? constantTimeEqual(match[1], expected) : false
+}
+
+function constantTimeEqual(actual: string, expected: string): boolean {
+  const actualBuffer = Buffer.from(actual)
+  const expectedBuffer = Buffer.from(expected)
+  if (actualBuffer.length !== expectedBuffer.length) return false
+  return timingSafeEqual(actualBuffer, expectedBuffer)
+}
+
+function sessionSignature(payload: string, adminToken: string): string {
+  return createHmac('sha256', adminToken).update(payload).digest('base64url')
+}
+
+function buildAdminSessionCookie(request: IncomingMessage, adminToken: string): string {
+  const issuedAt = Math.floor(Date.now() / 1000)
+  const payload = `v1.${issuedAt}.${randomBytes(24).toString('base64url')}`
+  const value = `${payload}.${sessionSignature(payload, adminToken)}`
+  const forwardedProto = request.headers['x-forwarded-proto']
+  const isSecure = (request.socket as { encrypted?: boolean }).encrypted === true || forwardedProto === 'https'
+  return `${ADMIN_SESSION_COOKIE}=${value}; Max-Age=${ADMIN_SESSION_TTL_SECONDS}; Path=/; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`
+}
+
+function readCookie(request: IncomingMessage, name: string): string | undefined {
+  const cookieHeader = request.headers.cookie
+  if (typeof cookieHeader !== 'string') return undefined
+  for (const cookie of cookieHeader.split(';')) {
+    const separator = cookie.indexOf('=')
+    if (separator < 0) continue
+    if (cookie.slice(0, separator).trim() !== name) continue
+    return cookie.slice(separator + 1).trim()
+  }
+  return undefined
+}
+
+function hasAdminSession(request: IncomingMessage, adminToken: string, now = Math.floor(Date.now() / 1000)): boolean {
+  const value = readCookie(request, ADMIN_SESSION_COOKIE)
+  if (!value) return false
+  const parts = value.split('.')
+  if (parts.length !== 4 || parts[0] !== 'v1') return false
+  const issuedAt = Number(parts[1])
+  if (!Number.isSafeInteger(issuedAt) || issuedAt > now + 60 || now - issuedAt > ADMIN_SESSION_TTL_SECONDS) return false
+  const payload = parts.slice(0, 3).join('.')
+  const signature = parts[3]
+  return constantTimeEqual(signature, sessionSignature(payload, adminToken))
+}
+
+function adminSessionMe(): KomariMeInfo {
+  return {
+    logged_in: true,
+    username: 'admin',
+    uuid: '',
+    sso_id: '',
+    sso_type: '',
+    '2fa_enabled': false,
+  }
+}
+
+export function getAdminSessionMe(request: IncomingMessage, adminToken?: string): KomariMeInfo | undefined {
+  return adminToken && hasAdminSession(request, adminToken) ? adminSessionMe() : undefined
 }
 
 async function readJsonObject(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -200,8 +270,8 @@ function methodNotAllowed(response: ServerResponse): boolean {
   return json(response, 405, envelope(null, 'method not allowed', 'error'))
 }
 
-function json(response: ServerResponse, statusCode: number, payload: unknown): boolean {
-  response.writeHead(statusCode, JSON_HEADERS)
+function json(response: ServerResponse, statusCode: number, payload: unknown, extraHeaders?: Record<string, string | string[]>): boolean {
+  response.writeHead(statusCode, { ...JSON_HEADERS, ...extraHeaders })
   response.end(JSON.stringify(payload))
   return true
 }
@@ -214,7 +284,7 @@ function isInternalUuid(value: unknown): value is string {
   return typeof value === 'string' && /^mmwx-(0|[1-9]\d*)$/.test(value)
 }
 
-async function handleRpc2(service: KomariDataService, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+async function handleRpc2(service: KomariDataService, request: IncomingMessage, response: ServerResponse, me?: KomariMeInfo): Promise<boolean> {
   let rpc: JsonRpcRequest
   try {
     rpc = JSON.parse(await readBody(request)) as JsonRpcRequest
@@ -223,10 +293,10 @@ async function handleRpc2(service: KomariDataService, request: IncomingMessage, 
   }
 
   const id = rpc.id ?? null
-  return json(response, 200, await dispatchRpc2(service, rpc))
+  return json(response, 200, await dispatchRpc2(service, rpc, me))
 }
 
-export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcRequest): Promise<unknown> {
+export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcRequest, me?: KomariMeInfo): Promise<unknown> {
   const id = rpc.id ?? null
   const params = rpc.params ?? {}
   try {
@@ -244,7 +314,7 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
       return rpcResult(id, await service.getVersion())
     }
     if (rpc.method === 'common:getMe' || rpc.method === 'public:getMe') {
-      return rpcResult(id, await service.getMe())
+      return rpcResult(id, me ?? await service.getMe())
     }
     if (rpc.method === 'common:getPublicInfo') {
       return rpcResult(id, await service.getPublicInfo())

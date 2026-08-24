@@ -1,11 +1,12 @@
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
 import WebSocket, { WebSocketServer } from 'ws'
 
 import type { AppConfig } from '../config.js'
 import { KomariDataService } from '../komari/service.js'
 import type { LoadedTheme } from '../theme/types.js'
 import type { ApiRouter } from './api.js'
-import { dispatchRpc2 } from './api.js'
+import { dispatchRpc2, getAdminSessionMe } from './api.js'
 import { serveStatic } from './static.js'
 import type { ProbeStreamRelay } from '../mmwx/stream-relay.js'
 
@@ -37,7 +38,7 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
         ws.on('message', async (raw) => {
           try {
             const rpc = JSON.parse(raw.toString()) as { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, string | number | boolean | undefined> }
-            ws.send(JSON.stringify(await dispatchRpc2(snapshotService, rpc)))
+            ws.send(JSON.stringify(await dispatchRpc2(snapshotService, rpc, getAdminSessionMe(request, config.adminToken))))
           } catch {
             ws.send(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }))
           }
@@ -153,15 +154,37 @@ function safeJson(value: unknown): string {
   return JSON.stringify(value).replaceAll('<', '\\u003c')
 }
 
-function adminThemeSettingsHtml(theme: LoadedTheme): string {
+function supportsFrontendThemeManagement(theme: LoadedTheme): boolean {
+  const repository = theme.source.repoUrl
+    .replace(/^https:\/\/github\.com\//i, '')
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '')
+    .toLowerCase()
+  if ([
+    'stqfdyr/komari-theme-lumina',
+    'shanyang242/komari-theme-luminaplus',
+    'vaspike/junimo',
+  ].includes(repository)) {
+    return true
+  }
+  try {
+    return /(?:view=theme-manage|theme-manage)/i.test(readFileSync(theme.indexPath, 'utf8'))
+  } catch {
+    return false
+  }
+}
+
+export function adminThemeSettingsHtml(theme: LoadedTheme): string {
   const title = htmlEscape(theme.title ?? theme.short ?? 'Komari Theme')
   const repoUrl = theme.source.repoUrl
   const repoDisplay = repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\/+$/, '')
+  const frontendThemeManagement = supportsFrontendThemeManagement(theme)
   const meta = {
     title: theme.title,
     short: theme.short,
     repoUrl: theme.source.repoUrl,
     ref: theme.source.ref,
+    frontendThemeManagement,
   }
   return `<!doctype html>
 <html lang="zh-CN">
@@ -266,7 +289,11 @@ async function boot(){
   const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
   const cfg=manifest&&manifest.configuration;
   const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
-  if(!cfg){app.innerHTML='<div class="card"><div class="empty"><h2>当前主题未声明可配置项</h2></div></div>';return}
+  if(!cfg){
+   app.innerHTML=saveCard()+'<div class="card"><div class="empty"><h2>当前主题未声明可配置项</h2>'+(meta.frontendThemeManagement?'<p>当前主题提供前端配置页面，可先保存 ADMIN_TOKEN，再访问 <a href="/?view=theme-manage">/?view=theme-manage</a> 进行设置。</p>':"")+'</div></div>';
+   attachSave();
+   return
+  }
   const type=String(cfg.type||"managed").toLowerCase();
   if(type==="redirect"){app.innerHTML='<div class="card"><div class="empty"><h2>主题配置使用跳转页面</h2><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p></div></div>';return}
   if(type==="raw"){app.innerHTML='<div class="card"><iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:0;display:block" srcdoc="'+html(cfg.data||"")+'"></iframe></div>';return}
@@ -283,7 +310,7 @@ function attachSave(){
   try{
    const body=collect();
    await json("/api/admin/theme/settings",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+document.getElementById("admin-token").value},body:JSON.stringify(body)});
-   msg.className="msg ok";msg.textContent="已保存";
+   msg.className="msg ok";msg.textContent="已保存，登录态已建立";
   }catch(e){msg.className="msg error";msg.textContent=e.message||e}
  };
 }

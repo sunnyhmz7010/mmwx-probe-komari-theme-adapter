@@ -993,3 +993,47 @@ test('API routes save theme settings only with the admin token', async () => {
     assert.deepEqual(saved, [{ showNotice: true }])
   }, { adminToken: 'admin-secret' })
 })
+
+test('saving theme settings establishes a browser session for frontend theme management', async () => {
+  const saved: unknown[] = []
+  await withApi(fakeService({
+    updateThemeSettings: async (settings: Record<string, unknown>) => {
+      saved.push(settings)
+      return settings
+    },
+  }), async (baseUrl) => {
+    const tokenSave = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-secret', 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    assert.equal(tokenSave.status, 200)
+    const setCookie = Array.isArray(tokenSave.headers['set-cookie'])
+      ? tokenSave.headers['set-cookie'][0]
+      : tokenSave.headers['set-cookie']
+    assert.match(setCookie ?? '', /mmwx_admin_session=/)
+
+    const sessionCookie = setCookie?.split(';', 1)[0]
+    assert.ok(sessionCookie)
+
+    const me = await request(baseUrl, '/api/me', {
+      headers: { Cookie: sessionCookie },
+    })
+    assert.deepEqual(me.body, {
+      logged_in: true,
+      username: 'admin',
+      uuid: '',
+      sso_id: '',
+      sso_type: '',
+      '2fa_enabled': false,
+    })
+
+    const frontendSave = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Cookie: sessionCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frontend: true }),
+    })
+    assert.equal(frontendSave.status, 200)
+    assert.deepEqual(saved, [{}, { frontend: true }])
+  }, { adminToken: 'admin-secret' })
+})
