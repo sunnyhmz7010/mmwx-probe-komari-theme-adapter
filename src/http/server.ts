@@ -140,6 +140,14 @@ function serveAdmin(theme: LoadedTheme, request: IncomingMessage, response: Serv
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const url = new URL(request.url ?? '/', 'http://adapter.local')
   if (url.pathname !== '/admin' && !url.pathname.startsWith('/admin/')) return false
+  if (url.pathname === '/admin/dashboard' || url.pathname === '/admin/dashboard/') {
+    response.writeHead(302, {
+      Location: '/admin',
+      'Cache-Control': 'no-store',
+    })
+    response.end()
+    return true
+  }
   // 仅 /admin 及其尾斜杠形式展示设置页，其余 /admin/* 一律拒绝访问。
   if (url.pathname !== '/admin' && url.pathname !== '/admin/') {
     return jsonNotFound(response)
@@ -239,6 +247,7 @@ textarea{min-height:110px;resize:vertical}
 .switch-row label{margin:0}
 .actions{padding:16px 22px 20px;text-align:center}
 .actions .field{padding:0;border:0;text-align:left;margin-bottom:14px}
+.actions .btn+.btn{margin-left:10px}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 28px;border:0;border-radius:10px;background:var(--brand);color:#fff;font-weight:600;font-size:14px;cursor:pointer;transition:background .15s,transform .05s}
 .btn:hover{background:var(--brand-2)}
 .btn:active{transform:translateY(1px)}

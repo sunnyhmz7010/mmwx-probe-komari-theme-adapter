@@ -173,19 +173,21 @@ docker run -d \
 
 ### 🎨 主题配置
 
-容器会读取当前主题仓库根目录的 `komari-theme.json`。原有托管配置主题仍然通过 `/admin` 设置：
+需要修改主题设置时，打开适配器的管理页：
 
 ```text
 http://localhost:8080/admin
 ```
 
-页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。写入前需要在 `/admin` 的独立“管理员验证”板块验证环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。验证成功后适配器签发签名会话 Cookie，主题配置保存使用该会话，不再把输入框中的任意 Token 直接当作已登录状态。
+使用步骤：
 
-对于没有 `configuration`、但自身提供 `/?view=theme-manage` 配置页的主题（例如 Lumina、LuminaPlus 和 Junimo），`/admin` 会在“当前主题未声明可配置项”提示后追加前端配置入口。请先在 `/admin` 输入正确的 `ADMIN_TOKEN` 并点击“验证”，适配器才会签发 `HttpOnly` 签名会话 Cookie；之后访问 `/?view=theme-manage` 时，主题通过 `/api/me` 可以得到已登录状态，并可使用该会话保存配置。验证接口为 `POST /api/admin/auth/verify`，退出登录接口为 `POST /api/admin/auth/logout`。错误 Token 即使伴随已有会话也不会通过验证；退出登录会清除会话 Cookie，使前端主题配置和适配器配置写入恢复未登录状态。适配器不会修改主题源码，也不会把 `ADMIN_TOKEN` 写入 Cookie。
+1. 先在部署环境里设置 `ADMIN_TOKEN`。
+2. 访问 `/admin`，输入 `ADMIN_TOKEN`，点击“验证”。
+3. 如果当前主题有配置项，直接在 `/admin` 修改并点击“保存主题配置”。
+4. 如果当前主题提示使用前端配置页，例如 Lumina、LuminaPlus、Junimo，先在 `/admin` 验证成功，再点击提示里的 `/?view=theme-manage` 入口去设置。
+5. 设置完成后可以点击“退出登录”清除当前浏览器的管理会话。
 
-有 `configuration` 的主题仍在 `/admin` 直接配置；“保存主题配置”按钮位于主题配置卡片底部，不再单独显示保存卡片。验证成功、配置保存成功和退出登录等操作提示会自动消失。
-
-普通 `configuration` 主题的行为不变；无托管配置且未识别到前端配置入口的主题只保留原有提示。该会话只用于适配器自身的主题配置管理，不提供完整 Komari 后台登录能力。`/admin` 之外的子路径一律返回 404。
+适配器不会修改主题源码。没有配置项、也没有前端配置页的主题，只会显示“当前主题未声明可配置项”。
 
 ### 🧪 已实测主题仓库
 
@@ -197,7 +199,7 @@ http://localhost:8080/admin
 | `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-Lumina` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/shanyang242/Komari-Theme-LuminaPlus` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
-| `https://github.com/lyimoexiao/komari-theme-naive` | master | ❌ 容器无法启动 | ❌ 容器无法启动 | ❌ 容器无法启动 |
+| `https://github.com/lyimoexiao/komari-theme-naive` | master | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/tonyliuzj/komari-next` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 
 > ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、TCP/UDP 连接数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
@@ -223,8 +225,11 @@ http://localhost:8080/admin
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
 - 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成
 - 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
+- 主题构建环境：运行镜像内置 Bun，并启用 Corepack 的 pnpm shim；声明 `packageManager: pnpm@...` 或依赖 `pnpm-lock.yaml`、`catalog:` 的主题可按自身包管理器安装构建
 - 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；先通过 `/admin` 的“管理员验证”，再保存主题配置；有配置项的主题将保存按钮放在配置卡片底部
-- 前端主题配置会话：首次在 `/admin` 使用正确的 `ADMIN_TOKEN` 验证后签发 7 天有效的 `HttpOnly`、`SameSite=Lax` 签名 Cookie；`/api/me`、HTTP RPC2 和 WebSocket RPC 会向已建立会话返回已登录状态，前端主题可复用 `/api/admin/theme/settings` 保存配置；调用 `/api/admin/auth/logout` 会清除会话
+- 管理员验证接口：`POST /api/admin/auth/verify` 校验 `Authorization: Bearer ADMIN_TOKEN`；验证成功后签发 7 天有效的 `HttpOnly`、`SameSite=Lax` 签名 Cookie；错误 Token 即使伴随已有会话也不会通过验证
+- 前端主题配置会话：`/api/me`、HTTP RPC2 和 WebSocket RPC 会向已建立会话返回已登录状态，Lumina、LuminaPlus、Junimo 等前端配置页可复用 `/api/admin/theme/settings` 保存配置；调用 `POST /api/admin/auth/logout` 会清除会话
+- 管理路由兼容：`/admin` 和 `/admin/` 展示适配器设置页；`/admin/dashboard` 重定向到 `/admin`，兼容会跳转到该地址的主题；其他 `/admin/*` 子路径仍返回 404
 - 管理与访问日志：Docker 标准输出记录 HTTP 方法、路径、状态码、耗时，以及管理员 Token 验证成功/失败、退出登录和主题配置保存结果；日志不会记录 Token、Cookie 或请求体
 - 包管理器优先级：`pnpm-lock.yaml`、`bun.lock` / `bun.lockb`、`package-lock.json`
 - 构建隔离：主题构建使用 `CI=true`，不会把 `PROBE_TOKEN` 等敏感环境变量传入主题构建进程

@@ -60,7 +60,7 @@ async function tempTheme(): Promise<LoadedTheme> {
   }
 }
 
-async function httpGet(baseUrl: string, pathname: string): Promise<{ status: number; contentType?: string; body: string }> {
+async function httpGet(baseUrl: string, pathname: string): Promise<{ status: number; contentType?: string; location?: string; body: string }> {
   return await new Promise((resolve, reject) => {
     const req = http.get(`${baseUrl}${pathname}`, (res) => {
       const chunks: Buffer[] = []
@@ -68,6 +68,7 @@ async function httpGet(baseUrl: string, pathname: string): Promise<{ status: num
       res.on('end', () => resolve({
         status: res.statusCode ?? 0,
         contentType: res.headers['content-type'] as string | undefined,
+        location: res.headers.location as string | undefined,
         body: Buffer.concat(chunks).toString('utf8'),
       }))
     })
@@ -140,6 +141,10 @@ test('serves static assets and SPA fallback safely', async () => {
     assert.match(admin.contentType ?? '', /html/)
     assert.match(admin.body, /MMWX Probe Komari Theme Adapter Settings/)
     assert.match(admin.body, /\/api\/admin\/theme\/settings/)
+
+    const adhesiveAdmin = await httpGet(baseUrl, '/admin/dashboard')
+    assert.equal(adhesiveAdmin.status, 302)
+    assert.equal(adhesiveAdmin.location, '/admin')
 
     const adminSub = await httpGet(baseUrl, '/admin/settings/theme')
     assert.equal(adminSub.status, 404)

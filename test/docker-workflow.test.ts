@@ -14,3 +14,9 @@ test('Docker workflow builds only v tags and publishes release image tags', asyn
   assert.match(workflow, /type=semver,pattern=\{\{major\}\}/)
   assert.match(workflow, /type=raw,value=latest/)
 })
+
+test('runtime Docker image enables pnpm for packageManager-declared themes', async () => {
+  const dockerfile = await readFile(path.join(process.cwd(), 'Dockerfile'), 'utf8')
+
+  assert.match(dockerfile, /corepack enable pnpm/)
+})

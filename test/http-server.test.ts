@@ -39,6 +39,7 @@ test('admin keeps configuration saving inside the theme card and exposes logout 
 
   assert.match(html, /\/api\/admin\/auth\/logout/)
   assert.match(html, />退出登录</)
+  assert.match(html, /\.actions \.btn\+\.btn\{margin-left:10px\}/)
   assert.match(html, /保存主题配置/)
   assert.doesNotMatch(html, /function saveCard\(/)
   assert.match(html, /<div class="fields">'.*<div class="actions"><button class="btn" id="save"/s)

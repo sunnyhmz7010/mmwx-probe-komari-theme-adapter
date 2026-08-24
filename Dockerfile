@@ -19,6 +19,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && export BUN_INSTALL=/usr/local/bun \
   && curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14" \
+  && corepack enable pnpm \
   && useradd --create-home --uid 10001 adapter \
   && mkdir -p /data \
   && chown adapter:adapter /data
