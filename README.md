@@ -181,7 +181,7 @@ http://localhost:8080/admin
 
 页面会按当前主题的配置声明渲染轻量表单，并通过 Komari 兼容接口保存配置。写入前需要在 `/admin` 的独立“管理员验证”板块验证环境变量 `ADMIN_TOKEN`，否则页面只能查看配置声明和当前值。验证成功后适配器签发签名会话 Cookie，主题配置保存使用该会话，不再把输入框中的任意 Token 直接当作已登录状态。
 
-对于没有 `configuration`、但自身提供 `/?view=theme-manage` 配置页的主题（例如 Lumina、LuminaPlus 和 Junimo），`/admin` 会保留原有页面结构，并在“当前主题未声明可配置项”提示后追加前端配置入口。先在 `/admin` 输入正确的 `ADMIN_TOKEN` 并点击“验证”，适配器才会签发 `HttpOnly` 签名会话 Cookie；之后访问 `/?view=theme-manage` 时，主题通过 `/api/me` 可以得到已登录状态，并可使用该会话保存配置。验证接口为 `POST /api/admin/auth/verify`，退出登录接口为 `POST /api/admin/auth/logout`。错误 Token 即使伴随已有会话也不会通过验证；退出登录会清除会话 Cookie，使前端主题配置和适配器配置写入恢复未登录状态。适配器不会修改主题源码，也不会把 `ADMIN_TOKEN` 写入 Cookie。
+对于没有 `configuration`、但自身提供 `/?view=theme-manage` 配置页的主题（例如 Lumina、LuminaPlus 和 Junimo），`/admin` 会在“当前主题未声明可配置项”提示后追加前端配置入口。请先在 `/admin` 输入正确的 `ADMIN_TOKEN` 并点击“验证”，适配器才会签发 `HttpOnly` 签名会话 Cookie；之后访问 `/?view=theme-manage` 时，主题通过 `/api/me` 可以得到已登录状态，并可使用该会话保存配置。验证接口为 `POST /api/admin/auth/verify`，退出登录接口为 `POST /api/admin/auth/logout`。错误 Token 即使伴随已有会话也不会通过验证；退出登录会清除会话 Cookie，使前端主题配置和适配器配置写入恢复未登录状态。适配器不会修改主题源码，也不会把 `ADMIN_TOKEN` 写入 Cookie。
 
 有 `configuration` 的主题仍在 `/admin` 直接配置；“保存主题配置”按钮位于主题配置卡片底部，不再单独显示保存卡片。验证成功、配置保存成功和退出登录等操作提示会自动消失。
 
@@ -194,9 +194,9 @@ http://localhost:8080/admin
 | `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/Tokinx/komari-theme-emerald` | master | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/stqfdyr/komari-theme-adhesive-note` | main | ✅ | ✅ 全部支持 | 主题本身无配置项 |
-| `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 使用 `/?view=theme-manage` |
-| `https://github.com/stqfdyr/komari-theme-Lumina` | main | ✅ | ✅ 全部支持 | 使用 `/?view=theme-manage` |
-| `https://github.com/shanyang242/Komari-Theme-LuminaPlus` | main | ✅ | ⚠️ 提示“未配置首页 Ping” | 使用 `/?view=theme-manage` |
+| `https://github.com/vaspike/junimo` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
+| `https://github.com/stqfdyr/komari-theme-Lumina` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
+| `https://github.com/shanyang242/Komari-Theme-LuminaPlus` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/lyimoexiao/komari-theme-naive` | master | ❌ 容器无法启动 | ❌ 容器无法启动 | ❌ 容器无法启动 |
 | `https://github.com/tonyliuzj/komari-next` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 
