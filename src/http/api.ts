@@ -217,7 +217,7 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
         const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number'
           ? (error as { statusCode: number }).statusCode
           : 500
-        return json(response, statusCode, envelope(null, error instanceof Error ? error.message : 'upstream error', 'error'))
+        return json(response, statusCode, envelope(null, error instanceof Error ? escapeHtml(error.message) : 'upstream error', 'error'))
       }
     },
   }
@@ -226,8 +226,12 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
 function hasAdminToken(request: IncomingMessage, expected: string): boolean {
   const header = request.headers.authorization
   if (typeof header !== 'string') return false
-  const match = header.match(/^Bearer\s+(.+)$/i)
-  return match ? constantTimeEqual(match[1], expected) : false
+  // 线性解析 Bearer 凭证，避免 \s+(.+) 歧义回溯带来的多项式 ReDoS
+  if (header.slice(0, 6).toLowerCase() !== 'bearer') return false
+  const rest = header.slice(6)
+  if (!/^\s/.test(rest)) return false
+  const token = rest.trimStart()
+  return token.length > 0 && constantTimeEqual(token, expected)
 }
 
 function constantTimeEqual(actual: string, expected: string): boolean {
@@ -310,6 +314,15 @@ async function readJsonObject(request: IncomingMessage): Promise<Record<string, 
 
 function envelope(data: unknown, message = 'success', status = 'success'): { status: string; message: string; data: unknown } {
   return { status, message, data }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function methodNotAllowed(response: ServerResponse): boolean {
@@ -419,7 +432,7 @@ export async function dispatchRpc2(service: KomariDataService, rpc: JsonRpcReque
     }
     return rpcError(id, -32601, 'Method not found')
   } catch (error: unknown) {
-    return rpcError(id, -32000, error instanceof Error ? error.message : 'Upstream error')
+    return rpcError(id, -32000, error instanceof Error ? escapeHtml(error.message) : 'Upstream error')
   }
 }
 
