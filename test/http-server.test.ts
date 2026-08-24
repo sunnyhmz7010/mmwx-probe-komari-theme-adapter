@@ -18,6 +18,8 @@ test('admin keeps token card and appends frontend theme management notice for su
   const html = adminThemeSettingsHtml(theme('https://github.com/stqfdyr/komari-theme-Lumina'))
 
   assert.match(html, /ADMIN_TOKEN/)
+  assert.match(html, />验证</)
+  assert.match(html, /验证成功，登录态已建立/)
   assert.match(html, /当前主题未声明可配置项/)
   assert.match(html, /版本：<b>v\d+\.\d+\.\d+<\/b>/)
   assert.match(html, /"frontendThemeManagement":true/)

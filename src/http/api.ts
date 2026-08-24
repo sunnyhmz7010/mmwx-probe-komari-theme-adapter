@@ -4,6 +4,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { KomariDataService } from '../komari/service.js'
 import type { SeriesQuery } from '../mmwx/types.js'
 import type { KomariMeInfo } from '../komari/types.js'
+import { noopLogger, type Logger } from '../log.js'
 
 export interface ApiRouter {
   handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>
@@ -11,6 +12,7 @@ export interface ApiRouter {
 
 export interface ApiRouterOptions {
   adminToken?: string
+  logger?: Logger
 }
 
 type Query = Record<string, string>
@@ -110,6 +112,7 @@ const ADMIN_SESSION_COOKIE = 'mmwx_admin_session'
 const ADMIN_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 
 export function createApiRouter(service: KomariDataService, options: ApiRouterOptions = {}): ApiRouter {
+  const logger = options.logger ?? noopLogger
   return {
     async handle(request, response) {
       const url = new URL(request.url ?? '/', 'http://adapter.local')
@@ -125,17 +128,49 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
           return json(response, 200, envelope(await service.getVersion()))
         }
 
+        if (url.pathname === '/api/admin/auth/verify' && request.method === 'POST') {
+          if (!options.adminToken) {
+            logger.warn('管理员 Token 验证失败', { reason: 'ADMIN_TOKEN 未配置', remoteAddress: request.socket.remoteAddress })
+            return json(response, 403, envelope(null, '未配置 ADMIN_TOKEN，主题设置已禁用', 'error'))
+          }
+          if (!hasAdminToken(request, options.adminToken)) {
+            logger.warn('管理员 Token 验证失败', { reason: 'Token 不匹配', remoteAddress: request.socket.remoteAddress })
+            return json(response, 401, envelope(null, 'unauthorized', 'error'))
+          }
+          logger.info('管理员 Token 验证成功', { remoteAddress: request.socket.remoteAddress })
+          return json(
+            response,
+            200,
+            envelope({ logged_in: true }, '验证成功'),
+            { 'Set-Cookie': buildAdminSessionCookie(request, options.adminToken) },
+          )
+        }
+
         if (url.pathname === '/api/admin/theme/settings' && request.method === 'POST') {
-          if (!options.adminToken) return json(response, 403, envelope(null, '未配置 ADMIN_TOKEN，主题设置已禁用', 'error'))
-          const tokenAuthenticated = hasAdminToken(request, options.adminToken)
-          if (!tokenAuthenticated && !hasAdminSession(request, options.adminToken)) {
+          if (!options.adminToken) {
+            logger.warn('主题配置写入被拒绝', { reason: 'ADMIN_TOKEN 未配置', remoteAddress: request.socket.remoteAddress })
+            return json(response, 403, envelope(null, '未配置 ADMIN_TOKEN，主题设置已禁用', 'error'))
+          }
+          if (!hasAdminSession(request, options.adminToken)) {
+            logger.warn('主题配置写入被拒绝', { reason: '未建立管理员会话', remoteAddress: request.socket.remoteAddress })
             return json(response, 401, envelope(null, 'unauthorized', 'error'))
           }
           const body = await readJsonObject(request)
-          const headers = tokenAuthenticated
-            ? { 'Set-Cookie': buildAdminSessionCookie(request, options.adminToken) }
-            : undefined
-          return json(response, 200, envelope(await service.updateThemeSettings(body)), headers)
+          let result: unknown
+          try {
+            result = await service.updateThemeSettings(body)
+          } catch (error: unknown) {
+            logger.error('主题配置写入失败', {
+              reason: '持久化异常',
+              remoteAddress: request.socket.remoteAddress,
+            })
+            throw error
+          }
+          logger.info('主题配置写入成功', {
+            auth: 'session',
+            remoteAddress: request.socket.remoteAddress,
+          })
+          return json(response, 200, envelope(result))
         }
 
         if (request.method !== 'GET') return methodNotAllowed(response)

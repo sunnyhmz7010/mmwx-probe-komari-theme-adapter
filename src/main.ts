@@ -24,8 +24,8 @@ export async function start(): Promise<ServerHandle> {
     themeSettingsStore,
     themeManifest: theme.manifest,
   })
-  const api = createApiRouter(service, { adminToken: config.adminToken })
-  const server = createHttpServer(config, theme, api, hub)
+  const api = createApiRouter(service, { adminToken: config.adminToken, logger })
+  const server = createHttpServer(config, theme, api, hub, logger)
   await server.listen()
   return server
 }

@@ -962,7 +962,7 @@ test('API routes expose readonly Komari admin compatibility resources', async ()
   })
 })
 
-test('API routes save theme settings only with the admin token', async () => {
+test('API routes save theme settings only with a verified admin session', async () => {
   const saved: unknown[] = []
   await withApi(fakeService({
     updateThemeSettings: async (settings: Record<string, unknown>) => {
@@ -983,15 +983,85 @@ test('API routes save theme settings only with the admin token', async () => {
     })
     assert.equal(wrong.status, 401)
 
-    const savedResp = await request(baseUrl, '/api/admin/theme/settings', {
+    const directTokenSave = await request(baseUrl, '/api/admin/theme/settings', {
       method: 'POST',
       headers: { Authorization: 'Bearer admin-secret', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showNotice: true }),
+    })
+    assert.equal(directTokenSave.status, 401)
+    assert.equal(directTokenSave.headers['set-cookie'], undefined)
+    assert.deepEqual(saved, [])
+
+    const verified = await request(baseUrl, '/api/admin/auth/verify', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-secret' },
+    })
+    assert.equal(verified.status, 200)
+    const setCookie = Array.isArray(verified.headers['set-cookie'])
+      ? verified.headers['set-cookie'][0]
+      : verified.headers['set-cookie']
+    assert.match(setCookie ?? '', /^mmwx_admin_session=.*; Max-Age=\d+; Path=\/; HttpOnly; SameSite=Lax$/)
+    const sessionCookie = setCookie?.split(';', 1)[0]
+    assert.ok(sessionCookie)
+
+    const savedResp = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Cookie: sessionCookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ showNotice: true }),
     })
     assert.equal(savedResp.status, 200)
     assert.deepEqual(savedResp.body, { status: 'success', message: 'success', data: { showNotice: true, saved: true } })
     assert.deepEqual(saved, [{ showNotice: true }])
   }, { adminToken: 'admin-secret' })
+})
+
+test('admin token verification is independent and rejects wrong tokens even with an existing session', async () => {
+  const logs: string[] = []
+  await withApi(fakeService(), async (baseUrl) => {
+    const wrong = await request(baseUrl, '/api/admin/auth/verify', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer wrong' },
+    })
+    assert.equal(wrong.status, 401)
+    assert.deepEqual(wrong.body, { status: 'error', message: 'unauthorized', data: null })
+    assert.equal(wrong.headers['set-cookie'], undefined)
+
+    const verified = await request(baseUrl, '/api/admin/auth/verify', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-secret' },
+    })
+    assert.equal(verified.status, 200)
+    assert.deepEqual(verified.body, {
+      status: 'success',
+      message: '验证成功',
+      data: { logged_in: true },
+    })
+    const setCookie = Array.isArray(verified.headers['set-cookie'])
+      ? verified.headers['set-cookie'][0]
+      : verified.headers['set-cookie']
+    assert.match(setCookie ?? '', /mmwx_admin_session=/)
+    assert.match(setCookie ?? '', /; HttpOnly; /)
+    assert.match(setCookie ?? '', /; Path=\/;/)
+    assert.match(setCookie ?? '', /; SameSite=Lax$/)
+
+    const sessionCookie = setCookie?.split(';', 1)[0]
+    assert.ok(sessionCookie)
+    const wrongWithSession = await request(baseUrl, '/api/admin/auth/verify', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer wrong', Cookie: sessionCookie },
+    })
+    assert.equal(wrongWithSession.status, 401)
+    assert.equal(wrongWithSession.headers['set-cookie'], undefined)
+  }, {
+    adminToken: 'admin-secret',
+    logger: {
+      info(message: string) { logs.push(`info:${message}`) },
+      warn(message: string) { logs.push(`warn:${message}`) },
+      error(message: string) { logs.push(`error:${message}`) },
+    },
+  })
+  assert.ok(logs.some((line) => line.includes('管理员 Token 验证成功')))
+  assert.ok(logs.some((line) => line.includes('管理员 Token 验证失败')))
 })
 
 test('saving theme settings establishes a browser session for frontend theme management', async () => {
@@ -1002,10 +1072,9 @@ test('saving theme settings establishes a browser session for frontend theme man
       return settings
     },
   }), async (baseUrl) => {
-    const tokenSave = await request(baseUrl, '/api/admin/theme/settings', {
+    const tokenSave = await request(baseUrl, '/api/admin/auth/verify', {
       method: 'POST',
-      headers: { Authorization: 'Bearer admin-secret', 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      headers: { Authorization: 'Bearer admin-secret' },
     })
     assert.equal(tokenSave.status, 200)
     const setCookie = Array.isArray(tokenSave.headers['set-cookie'])
@@ -1034,6 +1103,40 @@ test('saving theme settings establishes a browser session for frontend theme man
       body: JSON.stringify({ frontend: true }),
     })
     assert.equal(frontendSave.status, 200)
-    assert.deepEqual(saved, [{}, { frontend: true }])
+    assert.deepEqual(saved, [{ frontend: true }])
   }, { adminToken: 'admin-secret' })
+})
+
+test('theme settings persistence failures are logged', async () => {
+  const logs: string[] = []
+  await withApi(fakeService({
+    updateThemeSettings: async () => {
+      throw new Error('write failed')
+    },
+  }), async (baseUrl) => {
+    const verified = await request(baseUrl, '/api/admin/auth/verify', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-secret' },
+    })
+    const setCookie = Array.isArray(verified.headers['set-cookie'])
+      ? verified.headers['set-cookie'][0]
+      : verified.headers['set-cookie']
+    const sessionCookie = setCookie?.split(';', 1)[0]
+    assert.ok(sessionCookie)
+
+    const saved = await request(baseUrl, '/api/admin/theme/settings', {
+      method: 'POST',
+      headers: { Cookie: sessionCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frontend: true }),
+    })
+    assert.equal(saved.status, 500)
+  }, {
+    adminToken: 'admin-secret',
+    logger: {
+      info(message: string) { logs.push(`info:${message}`) },
+      warn(message: string) { logs.push(`warn:${message}`) },
+      error(message: string) { logs.push(`error:${message}`) },
+    },
+  })
+  assert.ok(logs.some((line) => line.includes('主题配置写入失败')))
 })

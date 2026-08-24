@@ -10,18 +10,29 @@ import { dispatchRpc2, getAdminSessionMe } from './api.js'
 import { serveStatic } from './static.js'
 import type { ProbeStreamRelay } from '../mmwx/stream-relay.js'
 import { ADAPTER_VERSION } from '../version.js'
+import { noopLogger, type Logger } from '../log.js'
 
 export interface ServerHandle {
   listen(): Promise<void>
   close(): Promise<void>
 }
 
-export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: ApiRouter, hub: ProbeStreamRelay): ServerHandle {
+export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: ApiRouter, hub: ProbeStreamRelay, logger: Logger = noopLogger): ServerHandle {
   const snapshotService = new KomariDataService(hub)
   const clientsWss = new WebSocketServer({ noServer: true })
   const streamWss = new WebSocketServer({ noServer: true })
   const clients = new Set<WebSocket>()
   const server = http.createServer(async (request, response) => {
+    const startedAt = Date.now()
+    const path = new URL(request.url ?? '/', 'http://adapter.local').pathname
+    response.once('finish', () => {
+      logger.info('HTTP 请求', {
+        method: request.method ?? 'GET',
+        path,
+        status: response.statusCode,
+        durationMs: Date.now() - startedAt,
+      })
+    })
     if (serveHealthcheck(request, response)) return
     if (await api.handle(request, response)) return
     if (serveThemeManifest(theme, request, response)) return
@@ -32,6 +43,7 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
 
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '/', 'http://adapter.local')
+    logger.info('WebSocket 请求', { method: request.method ?? 'GET', path: url.pathname })
     if (url.pathname === '/api/rpc2') {
       clientsWss.handleUpgrade(request, socket, head, (ws) => {
         clients.add(ws)
@@ -257,7 +269,15 @@ const meta=JSON.parse(document.getElementById("theme-meta").textContent);
 const html=(v)=>String(v).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c]));
 const label=(v)=>typeof v==="string"?v:v&&typeof v==="object"?(v["zh-CN"]||v.zh||v.en||Object.values(v)[0]||""):"";
 const parseOptions=(v)=>Array.isArray(v)?v:String(v||"").split(",").map((x)=>x.trim()).filter(Boolean);
-async function json(url,init){const r=await fetch(url,init);const d=await r.json().catch(()=>({status:"error",message:"invalid json"}));if(!r.ok)throw new Error(d.message||("HTTP "+r.status));return d.data??d.result??d}
+let verified=false;
+async function json(url,init){
+ const r=await fetch(url,init);
+ const text=await r.text();
+ let d=null;
+ if(text){try{d=JSON.parse(text)}catch{if(!r.ok)throw new Error("HTTP "+r.status);throw new Error("服务器返回了无效 JSON")}}
+ if(!r.ok)throw new Error((d&&d.message)||("HTTP "+r.status));
+ return d&&((d.data??d.result)??d);
+}
 function fieldValue(settings,f){return settings&&Object.prototype.hasOwnProperty.call(settings,f.key)?settings[f.key]:f.default}
 function renderField(f,settings){
  if(f.type==="title")return '<h3>'+html(label(f.name)||"设置")+'</h3>';
@@ -286,36 +306,63 @@ function collect(){
 }
 async function boot(){
  try{
-  const pub=await json("/api/public");
-  const theme=pub.theme||meta.short||"current";
-  const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
-  const cfg=manifest&&manifest.configuration;
-  const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
+ const pub=await json("/api/public");
+ const theme=pub.theme||meta.short||"current";
+ const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
+ const cfg=manifest&&manifest.configuration;
+ const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
+  const me=await json("/api/me").catch(()=>null);
+  verified=Boolean(me&&me.logged_in);
   if(!cfg){
-   app.innerHTML=saveCard()+'<div class="card"><div class="empty"><h2>当前主题未声明可配置项</h2>'+(meta.frontendThemeManagement?'<p>当前主题提供前端配置页面，可先保存 ADMIN_TOKEN，再访问 <a href="/?view=theme-manage">/?view=theme-manage</a> 进行设置。</p>':"")+'</div></div>';
-   attachSave();
+   app.innerHTML=authCard()+'<div class="card"><div class="empty"><h2>当前主题未声明可配置项</h2>'+(meta.frontendThemeManagement?'<p>当前主题提供前端配置页面，请先完成管理员验证，再访问 <a href="/?view=theme-manage">/?view=theme-manage</a> 进行设置。</p>':"")+'</div></div>';
+   attachAuth();
    return
   }
   const type=String(cfg.type||"managed").toLowerCase();
-  if(type==="redirect"){app.innerHTML='<div class="card"><div class="empty"><h2>主题配置使用跳转页面</h2><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p></div></div>';return}
-  if(type==="raw"){app.innerHTML='<div class="card"><iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:0;display:block" srcdoc="'+html(cfg.data||"")+'"></iframe></div>';return}
+  if(type==="redirect"){app.innerHTML=authCard()+'<div class="card"><div class="empty"><h2>主题配置使用跳转页面</h2><p><a href="'+html(cfg.data||"#")+'">'+html(cfg.data||"打开")+'</a></p></div></div>';attachAuth();return}
+  if(type==="raw"){app.innerHTML=authCard()+'<div class="card"><iframe sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts" style="width:100%;height:70vh;border:0;display:block" srcdoc="'+html(cfg.data||"")+'"></iframe></div>';attachAuth();return}
   const fields=Array.isArray(cfg.data)?cfg.data:[];
-  app.innerHTML=saveCard()+'<div class="card"><div class="card-head"><span class="dot"></span>主题配置</div><div class="fields">'+fields.map((f)=>renderField(f,settings)).join("")+'</div></div>';attachSave();
+  app.innerHTML=authCard()+saveCard()+'<div class="card"><div class="card-head"><span class="dot"></span>主题配置</div><div class="fields">'+fields.map((f)=>renderField(f,settings)).join("")+'</div></div>';
+  attachAuth();
+  attachSave();
  }catch(e){app.innerHTML='<div class="card"><div class="empty"><h2>加载失败</h2><p class="msg error">'+html(e.message||e)+'</p></div></div>'}
 }
-function saveCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>保存</div><div class="actions"><div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button class="btn" id="save">保存主题配置</button><p class="msg" id="msg"></p></div></div>'}
-function attachSave(){
- const button=document.getElementById("save");
- if(!button)return;
- button.onclick=async()=>{
-  const msg=document.getElementById("msg");
-  try{
-   const body=collect();
-   await json("/api/admin/theme/settings",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+document.getElementById("admin-token").value},body:JSON.stringify(body)});
-   msg.className="msg ok";msg.textContent="已保存，登录态已建立";
-  }catch(e){msg.className="msg error";msg.textContent=e.message||e}
- };
-}
+ function authCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>管理员验证</div><div class="actions"><div class="field"><label>ADMIN_TOKEN</label><input id="admin-token" type="password" autocomplete="current-password"></div><button class="btn" id="verify">验证</button><p class="msg" id="auth-msg"></p></div></div>'}
+ function saveCard(){return '<div class="card"><div class="card-head"><span class="dot"></span>保存</div><div class="actions"><button class="btn" id="save" disabled>保存主题配置</button><p class="msg" id="save-msg"></p></div></div>'}
+ function updateAuthState(){
+  const verify=document.getElementById("verify"), save=document.getElementById("save"), msg=document.getElementById("auth-msg");
+  if(verify)verify.disabled=verified;
+  if(save)save.disabled=!verified;
+  if(verified&&msg){msg.className="msg ok";msg.textContent="验证成功，登录态已建立"}
+ }
+ function attachAuth(){
+  const button=document.getElementById("verify");
+  if(!button){return}
+  updateAuthState();
+  button.onclick=async()=>{
+   const msg=document.getElementById("auth-msg");
+   try{
+    const token=document.getElementById("admin-token").value.trim();
+    if(!token)throw new Error("请输入 ADMIN_TOKEN");
+    await json("/api/admin/auth/verify",{method:"POST",headers:{"Authorization":"Bearer "+token}});
+    verified=true;
+    updateAuthState();
+   }catch(e){verified=false;updateAuthState();msg.className="msg error";msg.textContent=e.message||e}
+  };
+ }
+ function attachSave(){
+  const button=document.getElementById("save");
+  if(!button)return;
+  button.onclick=async()=>{
+   const msg=document.getElementById("save-msg");
+   try{
+    if(!verified)throw new Error("请先验证 ADMIN_TOKEN");
+    const body=collect();
+    await json("/api/admin/theme/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    msg.className="msg ok";msg.textContent="主题配置已保存";
+   }catch(e){msg.className="msg error";msg.textContent=e.message||e}
+  };
+ }
 boot();
 </script>
 </body>
