@@ -1,5 +1,6 @@
 import { describeConfig, loadConfig, THEME_SETTINGS_PATH } from './config.js'
 import { MmwxClient } from './mmwx/client.js'
+import { ProbeHistoryBuffer } from './mmwx/history-buffer.js'
 import { ProbeStreamRelay } from './mmwx/stream-relay.js'
 import { createApiRouter } from './http/api.js'
 import { createHttpServer, type ServerHandle } from './http/server.js'
@@ -14,7 +15,8 @@ export async function start(): Promise<ServerHandle> {
   logger.info(`启动配置：${describeConfig(config)}`)
   const theme = await loadTheme(config, logger)
   const mmwx = new MmwxClient(config)
-  const hub = new ProbeStreamRelay(mmwx)
+  const historyBuffer = new ProbeHistoryBuffer()
+  const hub = new ProbeStreamRelay(mmwx, historyBuffer)
   const themeSettingsStore = new FileThemeSettingsStore(THEME_SETTINGS_PATH)
   const service = new KomariDataService(hub, {
     ...theme.source,
@@ -23,7 +25,7 @@ export async function start(): Promise<ServerHandle> {
     themeSettings: theme.themeSettings,
     themeSettingsStore,
     themeManifest: theme.manifest,
-  })
+  }, historyBuffer)
   const api = createApiRouter(service, { adminToken: config.adminToken, logger })
   const server = createHttpServer(config, theme, api, hub, logger)
   await server.listen()

@@ -1,5 +1,6 @@
 import WebSocket from 'ws'
 
+import type { ProbeHistoryBuffer } from './history-buffer.js'
 import type { ProbePayload, ProbeSeriesPayload, SeriesQuery } from './types.js'
 
 const MAX_FRAME_AGE_MS = 12_000
@@ -28,7 +29,10 @@ export class ProbeStreamRelay {
   private snapshotRequest: Promise<ProbePayload> | null = null
   private readonly clients = new Set<WebSocket>()
 
-  public constructor(private readonly origin: ProbeOrigin) {}
+  public constructor(
+    private readonly origin: ProbeOrigin,
+    private readonly history?: ProbeHistoryBuffer,
+  ) {}
 
   public async fetchProbe(): Promise<ProbePayload> {
     if (this.latestPayload !== null && this.frameAgeMs() <= MAX_FRAME_AGE_MS) {
@@ -101,6 +105,8 @@ export class ProbeStreamRelay {
   private remember(payload: ProbePayload): void {
     this.latestPayload = payload
     this.latestAt = Date.now()
+    // 每一帧（WS 实时帧或 HTTP 快照）同时喂给历史缓冲，形成逐次密度采样。
+    this.history?.ingest(payload, new Date(this.latestAt))
     for (const client of this.clients) {
       this.sendTo(client, payload)
     }

@@ -1,4 +1,5 @@
 import type { MmwxMetricPoint, MmwxProbeSeries, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbeLicenseBadge, ProbePayload, ProbePingSeries, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
+import type { ProbeHistoryBuffer } from '../mmwx/history-buffer.js'
 import type { FileThemeSettingsStore } from '../theme/settings-store.js'
 import { ADAPTER_VERSION } from '../version.js'
 import {
@@ -32,7 +33,10 @@ import type {
   KomariQueryMetrics,
   KomariVersionInfo,
   LoadHistory,
+  LoadHistoryRecord,
   PingHistory,
+  PingHistoryRecord,
+  PingTask,
 } from './types.js'
 
 interface DataClient {
@@ -409,6 +413,7 @@ export class KomariDataService {
   public constructor(
     private readonly client: DataClient,
     private readonly themeSource?: ThemeSource,
+    private readonly history?: ProbeHistoryBuffer,
   ) {}
 
   public async getSnapshot(): Promise<KomariSnapshot> {
@@ -611,16 +616,88 @@ export class KomariDataService {
   private async getPingHistoryForUuid(uuid: string, query: SeriesQuery): Promise<PingHistory> {
     const index = serverIndexFromUuid(uuid)
     const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), all: '1' }))
-    if (payload.pings || payload.all_series || payload.series) return toPingSeriesHistory(payload, index)
-    return { count: 0, records: [], tasks: [], basic_info: { clients: [] } }
+    const fromSeries = (payload.pings || payload.all_series || payload.series)
+      ? toPingSeriesHistory(payload, index)
+      : { count: 0, records: [], tasks: [], basic_info: { clients: [] } }
+    return this.withBufferedPingHistory(index, fromSeries)
+  }
+
+  // 实时帧逐次样本优先，主控聚合桶只填补缓冲未覆盖的时段（如刚重启的冷启动窗口）。
+  private withBufferedPingHistory(index: number, fromSeries: PingHistory): PingHistory {
+    const buffered = this.history?.snapshotPing(index)
+    if (!buffered || buffered.size === 0) return fromSeries
+    const client = `mmwx-${index}`
+    const idByName = new Map<string, number>()
+    for (const task of fromSeries.tasks) idByName.set(task.name, task.id)
+    let nextId = fromSeries.tasks.reduce((max, task) => Math.max(max, task.id), 0)
+    const tasks: PingTask[] = fromSeries.tasks.map((task) => ({ ...task, clients: [...new Set([...task.clients, client])].sort() }))
+    for (const name of buffered.keys()) {
+      if (idByName.has(name)) continue
+      nextId += 1
+      idByName.set(name, nextId)
+      tasks.push({ id: nextId, name, clients: [client], default_on: true, type: 'icmp', interval: 30 })
+    }
+    const merged = new Map<string, PingHistoryRecord>()
+    for (const [name, points] of buffered) {
+      const taskId = idByName.get(name)
+      if (taskId === undefined) continue
+      for (const point of points) {
+        merged.set(`${name}|${point.t}`, {
+          task_id: taskId,
+          time: new Date(point.t).toISOString(),
+          value: point.value,
+          loss: point.loss,
+          client,
+        })
+      }
+    }
+    const nameById = new Map(fromSeries.tasks.map((task) => [task.id, task.name]))
+    for (const record of fromSeries.records) {
+      const name = nameById.get(record.task_id) ?? `task-${record.task_id}`
+      const key = `${name}|${Date.parse(record.time)}`
+      if (!merged.has(key)) merged.set(key, record)
+    }
+    const records = [...merged.values()].sort((left, right) => {
+      const timeDiff = Date.parse(left.time) - Date.parse(right.time)
+      if (timeDiff !== 0) return timeDiff
+      return left.task_id - right.task_id
+    })
+    return { count: records.length, records, tasks, basic_info: { clients: [client] } }
   }
 
   public async getLoadHistory(uuid: string, query: SeriesQuery): Promise<LoadHistory> {
     const index = serverIndexFromUuid(uuid)
     const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), metric: 'system' }))
-    if (isSystemMetricSeries(payload.series)) return toSystemMetricHistory(payload.series, index)
-    const series = payload.systems?.find((item) => Number(item.serverId) === index) ?? payload.systems?.[0] ?? { serverId: index, points: [] }
-    return toLoadHistory({ ...series, serverId: index })
+    const fromSeries = isSystemMetricSeries(payload.series)
+      ? toSystemMetricHistory(payload.series, index)
+      : toLoadHistory({ ...(payload.systems?.find((item) => Number(item.serverId) === index) ?? payload.systems?.[0] ?? { points: [] }), serverId: index })
+    return this.withBufferedLoadHistory(index, fromSeries)
+  }
+
+  // 与 ping 同策略：缓冲逐帧样本优先，聚合序列补冷启动窗口，按时间戳去重。
+  private withBufferedLoadHistory(index: number, fromSeries: LoadHistory): LoadHistory {
+    const buffered = this.history?.snapshotLoad(index)
+    if (!buffered || buffered.length === 0) return fromSeries
+    const client = `mmwx-${index}`
+    const merged = new Map<number, LoadHistoryRecord>()
+    for (const point of buffered) {
+      const record: LoadHistoryRecord = { client, time: new Date(point.t).toISOString() }
+      if (point.cpu !== undefined) record.cpu = point.cpu
+      if (point.ram !== undefined) record.ram = point.ram
+      if (point.mem_total !== undefined) record.mem_total = point.mem_total
+      if (point.load !== undefined) record.load = point.load
+      if (point.net_out !== undefined) record.net_out = point.net_out
+      if (point.net_in !== undefined) record.net_in = point.net_in
+      if (point.net_total_up !== undefined) record.net_total_up = point.net_total_up
+      if (point.net_total_down !== undefined) record.net_total_down = point.net_total_down
+      merged.set(point.t, record)
+    }
+    for (const record of fromSeries.records) {
+      const t = Date.parse(record.time)
+      if (!merged.has(t)) merged.set(t, record)
+    }
+    const records = [...merged.values()].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
+    return { count: records.length, records }
   }
 
   public async getLoadRecords(uuid: string, query: SeriesQuery): Promise<KomariLoadRecords> {
