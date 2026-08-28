@@ -37,6 +37,9 @@ interface ClientSeries {
   ping: Map<string, PointSeries<BufferedPingPoint>>
 }
 
+// 落盘格式版本：字段结构变化时递增，load 遇到不认识的版本直接丢弃。
+const SNAPSHOT_VERSION = 1
+
 function numberOrUndefined(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined
   const numeric = typeof value === 'number' ? value : Number(value)
@@ -59,6 +62,21 @@ function load1Of(value: ProbeServer['load'] | ProbeServer['loadavg']): number | 
 
 function pingTaskName(bucket: { key?: string | null; name?: string | null; label?: string | null }, index: number): string {
   return bucket.name?.trim() || bucket.label?.trim() || bucket.key?.trim() || `Ping ${index + 1}`
+}
+
+function isFiniteOrNull(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value))
+}
+
+function isPingPoint(item: unknown): item is BufferedPingPoint {
+  if (typeof item !== 'object' || item === null) return false
+  const point = item as { t?: unknown; value?: unknown; loss?: unknown }
+  return Number.isFinite(point.t) && isFiniteOrNull(point.value) && isFiniteOrNull(point.loss)
+}
+
+function isLoadPoint(item: unknown): item is BufferedLoadPoint {
+  if (typeof item !== 'object' || item === null) return false
+  return Number.isFinite((item as { t?: unknown }).t)
 }
 
 /**
@@ -94,6 +112,72 @@ export class ProbeHistoryBuffer {
       if (merged.length > 0) result.set(name, merged)
     }
     return result
+  }
+
+  // 序列化为可落盘的 JSON 结构，冷层 Map 转数组。
+  public toJSON(): unknown {
+    const clients: Record<string, unknown> = {}
+    for (const [index, series] of this.clients) {
+      clients[String(index)] = {
+        load: this.serializeSeries(series.load),
+        ping: [...series.ping].map(([name, points]) => [name, this.serializeSeries(points)]),
+      }
+    }
+    return { version: SNAPSHOT_VERSION, clients }
+  }
+
+  // 从落盘 JSON 恢复缓冲；按当前时间重整热/冷层归位并裁剪过期数据。形状不符时整体丢弃。
+  public load(data: unknown, now: Date = new Date()): void {
+    if (typeof data !== 'object' || data === null) return
+    const snapshot = data as { version?: unknown; clients?: unknown }
+    if (snapshot.version !== SNAPSHOT_VERSION) return
+    if (typeof snapshot.clients !== 'object' || snapshot.clients === null) return
+    const nowMs = now.getTime()
+    for (const [key, value] of Object.entries(snapshot.clients as Record<string, unknown>)) {
+      const index = Number(key)
+      if (!Number.isInteger(index) || index < 0) continue
+      const series = this.deserializeClient(value, nowMs)
+      if (series) this.clients.set(index, series)
+    }
+  }
+
+  private serializeSeries<T extends { t: number }>(series: PointSeries<T>): unknown {
+    return {
+      hot: series.hot,
+      cold: [...series.cold.entries()],
+    }
+  }
+
+  private deserializeClient(value: unknown, nowMs: number): ClientSeries | null {
+    if (typeof value !== 'object' || value === null) return null
+    const raw = value as { load?: unknown; ping?: unknown }
+    const load = this.deserializeSeries<BufferedLoadPoint>(raw.load, nowMs, isLoadPoint)
+    if (!load) return null
+    const ping = new Map<string, PointSeries<BufferedPingPoint>>()
+    if (Array.isArray(raw.ping)) {
+      for (const entry of raw.ping) {
+        if (!Array.isArray(entry) || typeof entry[0] !== 'string') continue
+        const points = this.deserializeSeries<BufferedPingPoint>(entry[1], nowMs, isPingPoint)
+        if (points && points.hot.length + points.cold.size > 0) ping.set(entry[0], points)
+      }
+    }
+    return { load, ping }
+  }
+
+  private deserializeSeries<T extends { t: number }>(value: unknown, nowMs: number, isPoint: (item: unknown) => item is T): PointSeries<T> | null {
+    if (typeof value !== 'object' || value === null) return null
+    const raw = value as { hot?: unknown; cold?: unknown }
+    if (!Array.isArray(raw.hot) || !Array.isArray(raw.cold)) return null
+    const hot = raw.hot.filter(isPoint)
+    const cold = new Map<number, T>()
+    for (const entry of raw.cold) {
+      if (!Array.isArray(entry) || !Number.isFinite(entry[0]) || !isPoint(entry[1])) continue
+      cold.set(entry[0] as number, entry[1])
+    }
+    const series: PointSeries<T> = { hot, cold }
+    // 恢复后按当前时间重整：停机期间过热层窗口的点降级冷层，超总窗口的裁剪。
+    this.applyRetention(series, nowMs)
+    return series
   }
 
   private clientSeries(index: number): ClientSeries {

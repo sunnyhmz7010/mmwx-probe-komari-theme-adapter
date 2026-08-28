@@ -146,3 +146,43 @@ test('merges buffered load samples over aggregated series with buffer precedence
   assert.equal(history.records[0].client, 'mmwx-0')
   assert.equal(history.records[1].cpu, 12.5)
 })
+
+test('round-trips buffer state through toJSON and load', () => {
+  const buffer = new ProbeHistoryBuffer()
+  buffer.ingest(frame(T0).payload, frame(T0).at)
+  buffer.ingest(frame(T0 + 3000, { cpu: 30, ping: [{ name: 'Google', value: 40, loss: 0 }] }).payload, new Date(T0 + 3000))
+
+  const restored = new ProbeHistoryBuffer()
+  restored.load(JSON.parse(JSON.stringify(buffer.toJSON())), new Date(T0 + 6000))
+
+  const load = restored.snapshotLoad(0)
+  assert.deepEqual(load.map((point) => [point.t, point.cpu]), [[T0, 12.5], [T0 + 3000, 30]])
+  const ping = restored.snapshotPing(0)
+  assert.deepEqual(ping.get('Google')?.map((point) => point.value), [25, 40])
+  // 第二帧未包含 Cloudflare 线路，只有第一帧的一个点。
+  assert.deepEqual(ping.get('Cloudflare')?.map((point) => point.value), [3.5])
+})
+
+test('load demotes stale hot points to cold layer and drops expired points', () => {
+  const buffer = new ProbeHistoryBuffer()
+  buffer.ingest(frame(T0).payload, frame(T0).at)
+  const snapshot = JSON.parse(JSON.stringify(buffer.toJSON()))
+
+  const restored = new ProbeHistoryBuffer()
+  // 停机后 2 小时才恢复：原热层点应降级为冷层分钟粒度，仍可查询。
+  restored.load(snapshot, new Date(T0 + 2 * 60 * 60 * 1000))
+  assert.equal(restored.snapshotLoad(0).length, 1)
+
+  // 停机超过 25 小时总窗口：恢复时应裁剪掉过期点。
+  const expired = new ProbeHistoryBuffer()
+  expired.load(snapshot, new Date(T0 + 26 * 60 * 60 * 1000))
+  assert.equal(expired.snapshotLoad(0).length, 0)
+})
+
+test('load ignores unknown versions and malformed shapes', () => {
+  const buffer = new ProbeHistoryBuffer()
+  buffer.load({ version: 999, clients: {} })
+  buffer.load('not-an-object')
+  buffer.load({ version: 1, clients: 'nope' })
+  assert.equal(buffer.snapshotLoad(0).length, 0)
+})

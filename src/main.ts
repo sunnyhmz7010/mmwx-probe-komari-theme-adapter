@@ -1,6 +1,7 @@
-import { describeConfig, loadConfig, THEME_SETTINGS_PATH } from './config.js'
+import { describeConfig, loadConfig, HISTORY_BUFFER_PATH, THEME_SETTINGS_PATH } from './config.js'
 import { MmwxClient } from './mmwx/client.js'
 import { ProbeHistoryBuffer } from './mmwx/history-buffer.js'
+import { FileHistoryBufferStore } from './mmwx/history-store.js'
 import { ProbeStreamRelay } from './mmwx/stream-relay.js'
 import { createApiRouter } from './http/api.js'
 import { createHttpServer, type ServerHandle } from './http/server.js'
@@ -9,6 +10,8 @@ import { createLogger, logError, logInfo } from './log.js'
 import { loadTheme } from './theme/loader.js'
 import { FileThemeSettingsStore } from './theme/settings-store.js'
 
+const HISTORY_FLUSH_INTERVAL_MS = 5 * 60 * 1000
+
 export async function start(): Promise<ServerHandle> {
   const config = loadConfig(process.env)
   const logger = createLogger([config.probeToken])
@@ -16,6 +19,14 @@ export async function start(): Promise<ServerHandle> {
   const theme = await loadTheme(config, logger)
   const mmwx = new MmwxClient(config)
   const historyBuffer = new ProbeHistoryBuffer()
+  const historyStore = new FileHistoryBufferStore(HISTORY_BUFFER_PATH)
+  try {
+    await historyStore.restore(historyBuffer)
+  } catch (error) {
+    logger.warn('历史采样缓冲恢复失败，以空缓冲启动', {
+      reason: error instanceof Error ? error.message : 'unknown error',
+    })
+  }
   const hub = new ProbeStreamRelay(mmwx, historyBuffer)
   const themeSettingsStore = new FileThemeSettingsStore(THEME_SETTINGS_PATH)
   const service = new KomariDataService(hub, {
@@ -28,6 +39,27 @@ export async function start(): Promise<ServerHandle> {
   }, historyBuffer)
   const api = createApiRouter(service, { adminToken: config.adminToken, logger })
   const server = createHttpServer(config, theme, api, hub, logger)
+
+  // 历史采样缓冲定时落盘（unref：不阻止停机时的正常退出）。
+  const historyFlushTimer = setInterval(() => {
+    historyStore.flush(historyBuffer).catch((error: unknown) => {
+      logger.warn('历史采样缓冲落盘失败', {
+        reason: error instanceof Error ? error.message : 'unknown error',
+      })
+    })
+  }, HISTORY_FLUSH_INTERVAL_MS)
+  historyFlushTimer.unref()
+  // 停机信号路径上同步落盘一次，保住最后一个周期内的增量。
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      try {
+        historyStore.flushSync(historyBuffer)
+      } catch {
+        // 停机路径落盘失败不阻断退出。
+      }
+    })
+  }
+
   await server.listen()
   return server
 }

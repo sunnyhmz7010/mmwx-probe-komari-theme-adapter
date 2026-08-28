@@ -10,6 +10,7 @@ export interface AppConfig {
 
 export const RUNTIME_DIR = '/data'
 export const THEME_SETTINGS_PATH = `${RUNTIME_DIR}/theme-settings.json`
+export const HISTORY_BUFFER_PATH = `${RUNTIME_DIR}/history-buffer.json`
 export const HTTP_PORT = 8080
 
 export function describeConfig(config: AppConfig): string {
