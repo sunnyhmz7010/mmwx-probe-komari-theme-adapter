@@ -4,8 +4,6 @@
 
 将 MMWX independent-probe 数据适配为 Komari 公开只读 API，并在运行时加载指定 Komari 主题，对外提供可直接访问的主题页面。
 
-当前稳定版本为 `v2.0.0`。该版本已支持 `/admin` 管理员会话验证、前端主题配置页登录态兼容、`/admin/dashboard` 到 `/admin` 的路由重定向，以及 pnpm/catalog 类主题构建。
-
 ## 技术栈
 
 - Node.js 22+（ESM）
@@ -32,8 +30,6 @@ docker build -t mmwx-komari-adapter .  # 构建本地镜像
 - Docker workflow 只在 `v*` 标签推送时发布镜像，生成 semver、major/minor、major 和 `latest` 标签；`main` 分支推送不发布镜像
 - 发布历史维护在 GitHub Releases，不提交 `CHANGELOG.md`
 - 首次发布 GHCR 镜像后，若公开拉取失败，在 GitHub Package settings 中确认容器包可见性为 Public，并确保仓库 Actions 对该 package 有写权限
-- README 遵循 `github-repo-infrastructure` skill 规范，所有 H2/H3 标题固定 Emoji 前缀，不可随意增删调换章节
-- 发布说明格式：`## ✨ New Features / 新增功能`、`## ⚙️ Enhancements / 功能优化`、`## 🛠️ Bug Fixes / 问题修复`
 
 ## 项目约定
 
