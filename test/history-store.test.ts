@@ -8,7 +8,9 @@ import type { ProbePayload, ProbeServer } from '../src/mmwx/types.js'
 import { ProbeHistoryBuffer } from '../src/mmwx/history-buffer.js'
 import { FileHistoryBufferStore } from '../src/mmwx/history-store.js'
 
-const T0 = Date.parse('2026-08-27T10:00:00.000Z')
+// T0 相对当前时间取值并对齐到整秒：缓冲只保留有限时间窗且时间戳按秒截断，
+// 写死日期或带毫秒尾数都会让断言与实际存储值不一致。
+const T0 = Math.floor(Date.now() / 1000) * 1000 - 120_000
 
 function frame(atMs: number, overrides: Partial<ProbeServer> = {}): { payload: ProbePayload; at: Date } {
   return {
