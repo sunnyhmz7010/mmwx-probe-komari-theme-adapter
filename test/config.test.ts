@@ -102,15 +102,26 @@ test('ignores removed path and build environment variables', () => {
 test('rejects malformed repository URLs', () => {
   for (const themeRepo of [
     'http://github.com/example/theme',
-    'https://gitlab.com/example/theme',
     'https://github.com/example/theme?ref=main',
     'https://github.com//theme',
+    'ftp://github.com/example/theme',
   ]) {
     assert.throws(
       () => loadConfig({ ...validEnv, THEME_REPO: themeRepo }),
       (error: unknown) => isConfigError(error) && /THEME_REPO/.test(error.message),
     )
   }
+})
+
+test('accepts non-github HTTPS repository URLs', () => {
+  assert.equal(
+    loadConfig({ ...validEnv, THEME_REPO: 'https://gitee.com/example/theme' }).themeRepo,
+    'https://gitee.com/example/theme',
+  )
+  assert.equal(
+    loadConfig({ ...validEnv, THEME_REPO: 'https://gh-proxy.com/https://github.com/example/theme' }).themeRepo,
+    'https://gh-proxy.com/https://github.com/example/theme',
+  )
 })
 
 test('never includes the token in configuration errors', () => {

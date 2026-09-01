@@ -34,33 +34,46 @@ function spawnFile(file: string, args: readonly string[], cwd?: string): Promise
   })
 }
 
-export function parseGitHubRepo(value: string): { owner: string; name: string } {
+export function parseGitHubRepo(value: string): { owner: string; name: string; host: string } {
   if (!value || /\s/.test(value)) {
-    throw new Error('THEME_REPO must be a GitHub HTTPS repository URL')
+    throw new Error('THEME_REPO must be an HTTPS repository URL')
   }
 
   let url: URL
   try {
     url = new URL(value)
   } catch {
-    throw new Error('THEME_REPO must be a GitHub HTTPS repository URL')
+    throw new Error('THEME_REPO must be an HTTPS repository URL')
   }
 
-  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password || url.search || url.hash) {
-    throw new Error('THEME_REPO must be a GitHub HTTPS repository URL')
+  if (url.protocol !== 'https:' || url.port || url.username || url.password || url.search || url.hash) {
+    throw new Error('THEME_REPO must be an HTTPS repository URL')
   }
 
   let pathname: string
   try {
     pathname = decodeURIComponent(url.pathname)
   } catch {
-    throw new Error('THEME_REPO must be a GitHub HTTPS repository URL')
+    throw new Error('THEME_REPO must be an HTTPS repository URL')
   }
-  const match = pathname.match(/^\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/)
-  if (!match || match[1] === '.' || match[1] === '..' || match[2] === '.' || match[2] === '..' || match[2].length === 0) {
-    throw new Error('THEME_REPO must be a GitHub HTTPS repository URL')
+
+  const clean = pathname.replace(/\.git$/, '').replace(/\/+$/, '')
+
+  const standardMatch = clean.match(/^\/([^/]+)\/([^/]+)$/)
+  if (standardMatch && standardMatch[1] !== '..' && standardMatch[2] !== '..') {
+    return { owner: standardMatch[1], name: standardMatch[2], host: url.hostname }
   }
-  return { owner: match[1], name: match[2] }
+
+  const segments = clean.split('/').filter(Boolean)
+  if (segments.length >= 2) {
+    const owner = segments[segments.length - 2]
+    const name = segments[segments.length - 1]
+    if (owner !== '..' && name !== '..' && name.length > 0) {
+      return { owner, name, host: url.hostname }
+    }
+  }
+
+  throw new Error('THEME_REPO must be an HTTPS repository URL')
 }
 
 export function resolveThemeRef(value: string): string {
@@ -77,7 +90,7 @@ export function isCommitRef(ref: string): boolean {
 export async function acquireTheme(source: ThemeSource, targetDir: string, logger: Logger = noopLogger): Promise<string> {
   const repo = parseGitHubRepo(source.repoUrl)
   const ref = resolveThemeRef(source.ref)
-  const repoUrl = `https://github.com/${repo.owner}/${repo.name}.git`
+  const repoUrl = `https://${repo.host}/${repo.owner}/${repo.name}.git`
   const resolvedTarget = path.resolve(targetDir)
 
   await mkdir(path.dirname(resolvedTarget), { recursive: true })
