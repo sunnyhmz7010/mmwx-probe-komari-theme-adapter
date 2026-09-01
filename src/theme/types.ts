@@ -1,6 +1,7 @@
 export interface ThemeSource {
   repoUrl: string
   ref: string
+  gitProxy?: string
 }
 
 export type PackageManager = 'pnpm' | 'bun' | 'npm' | 'none'

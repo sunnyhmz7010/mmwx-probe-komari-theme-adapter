@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { isCommitRef, parseGitHubRepo, resolveThemeRef } from '../src/theme/repository.js'
+import { buildCloneUrl, isCommitRef, parseGitHubRepo, resolveThemeRef } from '../src/theme/repository.js'
 
 test('parses the supported GitHub repository URL forms', () => {
   assert.deepEqual(parseGitHubRepo('https://github.com/acme/komari-theme'), {
@@ -29,6 +29,20 @@ test('rejects repository URLs outside the exact GitHub HTTPS shape', () => {
   ]) {
     assert.throws(() => parseGitHubRepo(value), /THEME_REPO/)
   }
+})
+
+test('builds the clone URL with and without a git proxy prefix', () => {
+  assert.equal(buildCloneUrl({ owner: 'acme', name: 'komari-theme' }), 'https://github.com/acme/komari-theme.git')
+  assert.equal(
+    buildCloneUrl({ owner: 'acme', name: 'komari-theme' }, 'https://gh-proxy.com'),
+    'https://gh-proxy.com/https://github.com/acme/komari-theme.git',
+  )
+  assert.equal(
+    buildCloneUrl({ owner: 'acme', name: 'komari-theme' }, 'https://gh-proxy.com/'),
+    'https://gh-proxy.com/https://github.com/acme/komari-theme.git',
+  )
+  assert.throws(() => buildCloneUrl({ owner: 'acme', name: 'komari-theme' }, 'http://gh-proxy.com'), /THEME_GIT_PROXY/)
+  assert.throws(() => buildCloneUrl({ owner: 'acme', name: 'komari-theme' }, 'https://gh-proxy.com/x y'), /THEME_GIT_PROXY/)
 })
 
 test('preserves a safe theme ref exactly and rejects shell metacharacters', () => {

@@ -113,7 +113,11 @@ export async function readThemeMetadata(repoDir: string): Promise<{ short?: stri
 }
 
 export async function loadTheme(config: AppConfig, logger: Logger = createLogger([config.probeToken])): Promise<LoadedTheme> {
-  const source: ThemeSource = { repoUrl: config.themeRepo, ref: config.themeRef }
+  const source: ThemeSource = {
+    repoUrl: config.themeRepo,
+    ref: config.themeRef,
+    gitProxy: config.themeGitProxy || undefined,
+  }
   const themesDir = path.resolve(RUNTIME_DIR, 'themes')
   const currentDir = path.join(themesDir, 'current')
   await mkdir(themesDir, { recursive: true })

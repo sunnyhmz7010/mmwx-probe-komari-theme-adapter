@@ -13,6 +13,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     probeToken: 'probe-secret',
     themeRepo: 'https://github.com/acme/theme',
     themeRef: 'main',
+    themeGitProxy: '',
     ...overrides,
   }
 }

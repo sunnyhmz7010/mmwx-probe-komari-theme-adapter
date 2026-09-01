@@ -57,6 +57,7 @@ test('loads defaults and normalizes the origin', () => {
     probeToken: validEnv.PROBE_TOKEN,
     themeRepo: validEnv.THEME_REPO,
     themeRef: 'main',
+    themeGitProxy: '',
     adminToken: undefined,
   })
 })
@@ -65,6 +66,7 @@ test('describes the complete startup configuration without exposing the probe to
   const config = loadConfig({
     ...validEnv,
     THEME_REF: 'v1.2.3',
+    THEME_GIT_PROXY: 'https://gh-proxy.com',
     ADMIN_TOKEN: 'admin-secret',
   })
 
@@ -73,6 +75,7 @@ test('describes the complete startup configuration without exposing the probe to
   assert.match(summary, /PROBE_TOKEN=\[REDACTED\]/)
   assert.match(summary, /THEME_REPO=https:\/\/github\.com\/example\/theme/)
   assert.match(summary, /THEME_REF=v1\.2\.3/)
+  assert.match(summary, /THEME_GIT_PROXY=https:\/\/gh-proxy\.com/)
   assert.equal(summary.includes('PORT'), false)
   assert.match(summary, /ADMIN_TOKEN=\[REDACTED\]/)
   assert.match(summary, /VERSION=v\d+\.\d+\.\d+/)
@@ -109,6 +112,36 @@ test('rejects malformed repository URLs', () => {
     assert.throws(
       () => loadConfig({ ...validEnv, THEME_REPO: themeRepo }),
       (error: unknown) => isConfigError(error) && /THEME_REPO/.test(error.message),
+    )
+  }
+})
+
+test('THEME_GIT_PROXY defaults to direct clone and normalizes the proxy prefix', () => {
+  assert.equal(loadConfig({ ...validEnv }).themeGitProxy, '')
+  assert.equal(loadConfig({ ...validEnv, THEME_GIT_PROXY: '' }).themeGitProxy, '')
+  assert.equal(loadConfig({ ...validEnv, THEME_GIT_PROXY: '   ' }).themeGitProxy, '')
+  assert.equal(
+    loadConfig({ ...validEnv, THEME_GIT_PROXY: 'https://gh-proxy.com///' }).themeGitProxy,
+    'https://gh-proxy.com',
+  )
+  assert.equal(
+    loadConfig({ ...validEnv, THEME_GIT_PROXY: 'http://localhost:8443' }).themeGitProxy,
+    'http://localhost:8443',
+  )
+})
+
+test('rejects malformed THEME_GIT_PROXY values', () => {
+  for (const proxy of [
+    'not a url',
+    'ftp://gh-proxy.com',
+    'http://gh-proxy.com',
+    'https://user:pass@gh-proxy.com',
+    'https://gh-proxy.com/?key=1',
+    'https://gh-proxy.com/#anchor',
+  ]) {
+    assert.throws(
+      () => loadConfig({ ...validEnv, THEME_GIT_PROXY: proxy }),
+      (error: unknown) => isConfigError(error) && /THEME_GIT_PROXY/.test(error.message),
     )
   }
 })

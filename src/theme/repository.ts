@@ -74,14 +74,28 @@ export function isCommitRef(ref: string): boolean {
   return /^[0-9a-f]{7,40}$/i.test(ref)
 }
 
+// 克隆地址：未配置代理时直连 GitHub；配置代理时把完整 GitHub 地址拼到代理前缀后
+// （gh-proxy 等镜像要求形如 https://gh-proxy.com/https://github.com/owner/repo.git）
+export function buildCloneUrl(repo: { owner: string; name: string }, gitProxy?: string): string {
+  const target = `https://github.com/${repo.owner}/${repo.name}.git`
+  if (!gitProxy) {
+    return target
+  }
+  const proxy = gitProxy.replace(/\/+$/, '')
+  if (!/^https:\/\//.test(proxy) || /\s/.test(proxy)) {
+    throw new Error('THEME_GIT_PROXY must be an HTTPS proxy base URL')
+  }
+  return `${proxy}/${target}`
+}
+
 export async function acquireTheme(source: ThemeSource, targetDir: string, logger: Logger = noopLogger): Promise<string> {
   const repo = parseGitHubRepo(source.repoUrl)
   const ref = resolveThemeRef(source.ref)
-  const repoUrl = `https://github.com/${repo.owner}/${repo.name}.git`
+  const repoUrl = buildCloneUrl(repo, source.gitProxy)
   const resolvedTarget = path.resolve(targetDir)
 
   await mkdir(path.dirname(resolvedTarget), { recursive: true })
-  logger.info('主题仓库克隆开始', { repository: source.repoUrl, ref: source.ref })
+  logger.info('主题仓库克隆开始', { repository: source.repoUrl, cloneUrl: repoUrl, ref: source.ref })
   if (isCommitRef(ref)) {
     await spawnFile('git', ['clone', '--depth', '1', repoUrl, resolvedTarget])
     logger.info('主题 commit 获取开始', { ref })

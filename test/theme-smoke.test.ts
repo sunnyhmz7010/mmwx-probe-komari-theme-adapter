@@ -26,6 +26,7 @@ const baseConfig: AppConfig = {
   probeToken: 'probe-secret',
   themeRepo: 'https://github.com/acme/theme',
   themeRef: 'main',
+  themeGitProxy: '',
 }
 
 async function fixture(name: string): Promise<Fixture> {

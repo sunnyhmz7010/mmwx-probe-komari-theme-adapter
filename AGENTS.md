@@ -77,6 +77,7 @@ static-assets/       ← 内置国旗与 OS 图标资源（来源 junimo，Apach
 | `PROBE_TOKEN` | 是 | - | MMWX independent-probe Token |
 | `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址 |
 | `THEME_REF` | 否 | `main` | 主题分支、标签或 commit |
+| `THEME_GIT_PROXY` | 否 | 空（直连） | GitHub 克隆代理前缀，如 `https://gh-proxy.com`，克隆地址拼为 `<代理>/https://github.com/owner/repo.git` |
 | `ADMIN_TOKEN` | 否 | - | `/admin` 管理员验证 Token；未设置时禁用验证和主题配置写入 |
 
 > HTTP 监听端口固定为 `8080`（`src/config.ts` 中常量 `HTTP_PORT`），不读取 `PORT` 环境变量；对外端口通过容器端口映射调整。

@@ -5,6 +5,7 @@ export interface AppConfig {
   probeToken: string
   themeRepo: string
   themeRef: string
+  themeGitProxy: string
   adminToken?: string
 }
 
@@ -19,6 +20,7 @@ export function describeConfig(config: AppConfig): string {
     'PROBE_TOKEN=[REDACTED]',
     `THEME_REPO=${config.themeRepo}`,
     `THEME_REF=${config.themeRef}`,
+    `THEME_GIT_PROXY=${config.themeGitProxy || 'disabled'}`,
 
     `ADMIN_TOKEN=${config.adminToken ? '[REDACTED]' : 'disabled'}`,
     `VERSION=${ADAPTER_VERSION}`,
@@ -89,6 +91,28 @@ function parseThemeRepo(value: string): string {
   return `https://github.com/${match[1]}/${match[2]}`
 }
 
+// 克隆代理前缀：拼在完整 GitHub 地址前，最终克隆地址形如
+// https://gh-proxy.com/https://github.com/owner/repo.git；留空表示直连
+function parseThemeGitProxy(value: string): string {
+  if (!value) {
+    return ''
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ConfigError('THEME_GIT_PROXY must be an HTTPS proxy base URL')
+  }
+  const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+  if (url.protocol !== 'https:' && !(isLocal && url.protocol === 'http:')) {
+    throw new ConfigError('THEME_GIT_PROXY must use HTTPS outside localhost and 127.0.0.1')
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new ConfigError('THEME_GIT_PROXY must not contain credentials, query, or fragment')
+  }
+  return url.toString().replace(/\/+$/, '')
+}
+
 function parseThemeRef(value: string): string {
   if (!value || /[\s;&|`$<>]/.test(value)) {
     throw new ConfigError('THEME_REF contains invalid characters')
@@ -101,11 +125,13 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   const probeToken = required(env, 'PROBE_TOKEN')
   const themeRepo = parseThemeRepo(required(env, 'THEME_REPO'))
   const themeRef = parseThemeRef(env.THEME_REF?.trim() || 'main')
+  const themeGitProxy = parseThemeGitProxy(env.THEME_GIT_PROXY?.trim() || '')
   return {
     mmwxOrigin,
     probeToken,
     themeRepo,
     themeRef,
+    themeGitProxy,
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
   }
 }

@@ -61,6 +61,8 @@ services:
       - PROBE_TOKEN=replace-with-probe-token
       - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
+      # 可选：GitHub 克隆加速代理前缀（如 https://gh-proxy.com），留空直连
+      - THEME_GIT_PROXY=
       - ADMIN_TOKEN=replace-with-random-admin-token
 ```
 
@@ -86,6 +88,7 @@ docker run -d \
   -e PROBE_TOKEN="replace-with-probe-token" \
   -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
+  -e THEME_GIT_PROXY="" \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
   ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
 ```
@@ -104,6 +107,7 @@ docker run -d \
   -e PROBE_TOKEN="replace-with-probe-token" \
   -e THEME_REPO="https://github.com/example/komari-theme" \
   -e THEME_REF="main" \
+  -e THEME_GIT_PROXY="" \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
   mmwx-komari-adapter
 ```
@@ -214,6 +218,7 @@ http://localhost:8080/admin
 | `PROBE_TOKEN` | 是 | - | 主控“系统设置 → 探针”生成的独立探针访问密钥，仅作为 `X-MMwx-Probe-Token` 转发给主控 |
 | `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/example/komari-theme` |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
+| `THEME_GIT_PROXY` | 否 | 空（直连） | GitHub 克隆加速代理前缀，例如 `https://gh-proxy.com`；实际克隆地址拼为 `<代理>/https://github.com/owner/repo.git`。仅接受 HTTPS（`localhost` 和 `127.0.0.1` 允许 HTTP），不支持带凭据、查询或片段的地址 |
 | `ADMIN_TOKEN` | 否 | - | `/admin` 管理员验证使用的 Token；未设置时禁用验证和主题配置写入。适配器仅保存签名会话 Cookie，配置仍保存在容器内部运行目录 |
 
 ## 🧠 功能细节
@@ -226,7 +231,7 @@ http://localhost:8080/admin
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
 - 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成
-- 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
+- 主题加载流程：校验 `THEME_REPO` 和 `THEME_REF` 后克隆仓库；设置 `THEME_GIT_PROXY` 时把完整 GitHub 地址拼到代理前缀后克隆（如 gh-proxy），默认直连 GitHub；有构建脚本和受支持锁文件时执行生产构建，否则使用根目录静态 `index.html`
 - 主题构建环境：运行镜像内置 Bun，并启用 Corepack 的 pnpm shim；声明 `packageManager: pnpm@...` 或依赖 `pnpm-lock.yaml`、`catalog:` 的主题可按自身包管理器安装构建
 - 主题配置流程：保留完整 `komari-theme.json`，根据 `configuration` 渲染轻量配置页；先通过 `/admin` 的“管理员验证”，再保存主题配置；有配置项的主题将保存按钮放在配置卡片底部
 - 管理员验证接口：`POST /api/admin/auth/verify` 校验 `Authorization: Bearer ADMIN_TOKEN`；验证成功后签发 7 天有效的 `HttpOnly`、`SameSite=Lax` 签名 Cookie；错误 Token 即使伴随已有会话也不会通过验证
