@@ -3,31 +3,25 @@ import { test } from 'node:test'
 
 import { isCommitRef, parseGitHubRepo, resolveThemeRef } from '../src/theme/repository.js'
 
-test('parses the supported repository URL forms', () => {
+test('parses the supported GitHub repository URL forms', () => {
   assert.deepEqual(parseGitHubRepo('https://github.com/acme/komari-theme'), {
     owner: 'acme',
     name: 'komari-theme',
-    host: 'github.com',
   })
   assert.deepEqual(parseGitHubRepo('https://github.com/acme/komari-theme.git'), {
     owner: 'acme',
     name: 'komari-theme',
-    host: 'github.com',
-  })
-  assert.deepEqual(parseGitHubRepo('https://gitee.com/acme/komari-theme'), {
-    owner: 'acme',
-    name: 'komari-theme',
-    host: 'gitee.com',
   })
 })
 
-test('rejects repository URLs outside the exact HTTPS shape', () => {
+test('rejects repository URLs outside the exact GitHub HTTPS shape', () => {
   for (const value of [
     '',
     'https://github.com/acme',
     'https://github.com//komari-theme',
     'https://github.com/acme/',
     'http://github.com/acme/komari-theme',
+    'https://gitlab.com/acme/komari-theme',
     'https://github.com/acme/komari-theme?ref=main',
     'https://github.com/acme/komari-theme#readme',
     './acme/komari-theme',

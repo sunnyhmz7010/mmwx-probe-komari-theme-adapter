@@ -178,7 +178,7 @@ function safeJson(value: unknown): string {
 
 function supportsFrontendThemeManagement(theme: LoadedTheme): boolean {
   const repository = theme.source.repoUrl
-    .replace(/^https?:\/\/[^/]+\//i, '')
+    .replace(/^https:\/\/github\.com\//i, '')
     .replace(/\.git$/i, '')
     .replace(/\/+$/, '')
     .toLowerCase()
@@ -199,7 +199,7 @@ function supportsFrontendThemeManagement(theme: LoadedTheme): boolean {
 export function adminThemeSettingsHtml(theme: LoadedTheme): string {
   const title = htmlEscape(theme.title ?? theme.short ?? 'Komari Theme')
   const repoUrl = theme.source.repoUrl
-  const repoDisplay = repoUrl.replace(/^https?:\/\/[^/]+\//, '').replace(/\/+$/, '')
+  const repoDisplay = repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\/+$/, '')
   const frontendThemeManagement = supportsFrontendThemeManagement(theme)
   const meta = {
     title: theme.title,

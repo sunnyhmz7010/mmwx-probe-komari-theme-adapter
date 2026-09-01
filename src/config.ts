@@ -77,22 +77,16 @@ function parseThemeRepo(value: string): string {
   try {
     url = new URL(value)
   } catch {
-    throw new ConfigError('THEME_REPO must be an HTTPS repository URL')
+    throw new ConfigError('THEME_REPO must be a GitHub HTTPS repository URL')
   }
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
-    throw new ConfigError('THEME_REPO must be an HTTPS repository URL')
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password || url.search || url.hash) {
+    throw new ConfigError('THEME_REPO must be a GitHub HTTPS repository URL')
   }
-  const clean = url.pathname.replace(/\.git$/, '').replace(/\/+$/, '')
-  if (!clean || clean === '/' || clean === '.') {
-    throw new ConfigError('THEME_REPO must be an HTTPS repository URL')
+  const match = url.pathname.match(/^\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/)
+  if (!match || match[1].includes('.') || match[2].includes('.') || match[1] === '.' || match[2] === '.') {
+    throw new ConfigError('THEME_REPO must be a GitHub HTTPS repository URL')
   }
-  if (clean.includes('..')) {
-    throw new ConfigError('THEME_REPO must be an HTTPS repository URL')
-  }
-  if (/^\/\//.test(clean)) {
-    throw new ConfigError('THEME_REPO must be an HTTPS repository URL')
-  }
-  return `https://${url.hostname}${clean}`
+  return `https://github.com/${match[1]}/${match[2]}`
 }
 
 function parseThemeRef(value: string): string {
