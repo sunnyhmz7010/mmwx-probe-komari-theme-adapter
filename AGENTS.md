@@ -53,7 +53,7 @@ src/main.ts          ← 入口：加载配置、构建主题、组装服务、�
 src/config.ts        ← 环境变量解析与安全校验
 src/log.ts           ← 结构化日志与脱敏
 src/mmwx/client.ts   ← MMWX independent-probe HTTP/WebSocket 客户端
-src/mmwx/stream-relay.ts ← 主控降载：共享单条上游 WS、快照帧复用与广播
+src/mmwx/stream-relay.ts ← 常驻采样与主控降载：常驻单条上游 WS、断线重连与帧龄看门狗、快照帧复用与广播
 src/mmwx/types.ts    ← MMWX 探针数据类型
 src/komari/mapper.ts ← MMWX 数据到 Komari 形态的映射
 src/komari/service.ts← 查询和历史数据服务

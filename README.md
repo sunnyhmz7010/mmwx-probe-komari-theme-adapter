@@ -30,7 +30,7 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
 - 主题配置管理：保留 `/admin` 原有入口；支持 `komari-theme.json` 托管配置主题，也兼容通过 `/?view=theme-manage` 提供前端配置页的主题
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
-- 主控降载：通过共享流中继维护一条到主控的探针 WebSocket，广播给所有访客并复用最近快照帧，访客数增加不再按比例增加主控连接与实时查询
+- 主控降载：通过共享流中继维护一条常驻的到主控探针 WebSocket（7x24 常驻采样，不依赖访客在线），广播给所有访客并复用最近快照帧，访客数增加不再按比例增加主控连接与实时查询
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
 - 只读安全边界：`PROBE_TOKEN` 仅用于容器访问已配置主控，不暴露给浏览器，不提供登录、管理、写入或节点修改能力
 
@@ -132,7 +132,7 @@ docker run -d \
 
 ### 🔌 主控降载
 
-容器通过共享流中继（`ProbeStreamRelay`）维护一条到主控的共享探针 WebSocket，把实时快照帧广播给所有访客；`/api/probe` 优先复用最近一帧（12 秒内），历史序列 `/api/series` 实时直连主控。这样访客数增加时不再按访客数增加主控 WebSocket 与实时数据查询。
+容器通过共享流中继（`ProbeStreamRelay`）维护一条常驻的到主控共享探针 WebSocket（服务启动即连接、断线自动重连，与访客无关），把实时快照帧广播给所有访客；`/api/probe` 优先复用最近一帧（12 秒内），历史序列 `/api/series` 实时直连主控。这样访客数增加时不再按访客数增加主控 WebSocket 与实时数据查询。
 
 ### 🧩 Komari 兼容接口
 
@@ -224,8 +224,8 @@ http://localhost:8080/admin
 ## 🧠 功能细节
 
 - 原始探针层：`/api/probe`、`/api/series`、`/api/stream` 只做妙妙屋 X 主控代理，不改写路径、状态码和流式行为
-- 共享流降载：`ProbeStreamRelay` 在单进程内维护一条到主控的探针 WebSocket，把实时快照帧广播给所有下游访客；`/api/probe` 在 12 秒帧龄内复用最近一帧，历史序列 `/api/series` 实时直连；上游断开后指数退避重连，最后一名访客离开 30 秒后自动断开上游
-- 历史采样缓冲：实时帧同步写入进程内 `ProbeHistoryBuffer`，Komari 兼容层的 ping / 负载历史优先返回逐帧密度样本；缓冲保留最近 1 小时逐帧、更早按分钟降采样、共 25 小时，并每 5 分钟落盘到运行目录 `history-buffer.json`、启动时自动恢复，进程重启不丢历史；仅当运行目录数据不存在（如未映射卷的容器重建）时由主控聚合序列填补冷启动窗口（主控聚合桶仅约 5 分钟/桶，直接输出会导致 Komari 主题历史块出现空白段）
+- 常驻采样与降载：`ProbeStreamRelay` 在单进程内维护一条常驻的到主控探针 WebSocket（启动即连接，断开后无条件指数退避重连，不依赖访客在线），把实时快照帧广播给所有下游访客；`/api/probe` 在 12 秒帧龄内复用最近一帧，历史序列 `/api/series` 实时直连；帧龄看门狗（10 秒检查）在 WS 闪断、假活或重连间隙用 HTTP 快照兜底采样，保证历史缓冲持续有样本
+- 历史采样缓冲：实时帧同步写入进程内 `ProbeHistoryBuffer`，Komari 兼容层的 ping / 负载历史优先返回逐帧密度样本；缓冲保留最近 1 小时逐帧、更早按分钟降采样、共 25 小时，并每 5 分钟落盘到运行目录 `history-buffer.json`、启动时自动恢复，进程重启不丢历史；仅当运行目录数据不存在（如未映射卷的容器重建）时由主控聚合序列填补冷启动窗口（主控聚合桶粒度较粗——实测约 30 分钟/桶，直接输出会导致 Komari 主题历史块出现空白段）
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
 - 字段映射：地区字段优先取 `region_country`（ISO 代码）供主题解析国旗；续费货币把 ISO 代码转换为 Komari 官方 12 种货币符号（`CNY`→`¥`、`USD`→`$`、`CAD`→`CA$` 等）；`ping.loss` 指标按 Komari 语义输出 0~1 比例
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成

@@ -86,6 +86,7 @@ test('serves /ping health check as plain text pong', async () => {
     probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
   } as never
   const hub = new ProbeStreamRelay(mmwx)
+  hub.start()
   const api = createApiRouter(new KomariDataService(hub))
   const serverHandle = createHttpServer(config(), theme, api, hub, undefined, port)
 
@@ -111,6 +112,7 @@ test('serves static assets and SPA fallback safely', async () => {
     probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
   } as never
   const hub = new ProbeStreamRelay(mmwx)
+  hub.start()
   const api = createApiRouter(new KomariDataService(hub))
   const serverHandle = createHttpServer(config(), theme, api, hub, undefined, port)
 
@@ -194,6 +196,8 @@ test('routes websocket clients and broadcasts a shared stream hub connection', a
 
   try {
     await serverHandle.listen()
+    // 常驻采样生命周期由 start() 显式开启，与生产入口 main.ts 一致。
+    hub.start()
     const basePort = port
 
     await new Promise<void>((resolve, reject) => {

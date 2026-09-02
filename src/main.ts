@@ -16,7 +16,6 @@ export async function start(): Promise<ServerHandle> {
   const config = loadConfig(process.env)
   const logger = createLogger([config.probeToken])
   logger.info(`启动配置：${describeConfig(config)}`)
-  const theme = await loadTheme(config, logger)
   const mmwx = new MmwxClient(config)
   const historyBuffer = new ProbeHistoryBuffer()
   const historyStore = new FileHistoryBufferStore(HISTORY_BUFFER_PATH)
@@ -28,40 +27,49 @@ export async function start(): Promise<ServerHandle> {
     })
   }
   const hub = new ProbeStreamRelay(mmwx, historyBuffer)
-  const themeSettingsStore = new FileThemeSettingsStore(THEME_SETTINGS_PATH)
-  const service = new KomariDataService(hub, {
-    ...theme.source,
-    themeTitle: theme.title,
-    themeShort: theme.short,
-    themeSettings: theme.themeSettings,
-    themeSettingsStore,
-    themeManifest: theme.manifest,
-  }, historyBuffer)
-  const api = createApiRouter(service, { adminToken: config.adminToken, logger })
-  const server = createHttpServer(config, theme, api, hub, logger)
+  // 常驻采样：启动即连接主控并开启看门狗，主题加载期间不中断采样。
+  hub.start()
+  // 采样层已常驻，主题加载或监听失败时必须释放连接与定时器，避免进程挂住不退出。
+  try {
+    const theme = await loadTheme(config, logger)
+    const themeSettingsStore = new FileThemeSettingsStore(THEME_SETTINGS_PATH)
+    const service = new KomariDataService(hub, {
+      ...theme.source,
+      themeTitle: theme.title,
+      themeShort: theme.short,
+      themeSettings: theme.themeSettings,
+      themeSettingsStore,
+      themeManifest: theme.manifest,
+    }, historyBuffer)
+    const api = createApiRouter(service, { adminToken: config.adminToken, logger })
+    const server = createHttpServer(config, theme, api, hub, logger)
 
-  // 历史采样缓冲定时落盘（unref：不阻止停机时的正常退出）。
-  const historyFlushTimer = setInterval(() => {
-    historyStore.flush(historyBuffer).catch((error: unknown) => {
-      logger.warn('历史采样缓冲落盘失败', {
-        reason: error instanceof Error ? error.message : 'unknown error',
+    // 历史采样缓冲定时落盘（unref：不阻止停机时的正常退出）。
+    const historyFlushTimer = setInterval(() => {
+      historyStore.flush(historyBuffer).catch((error: unknown) => {
+        logger.warn('历史采样缓冲落盘失败', {
+          reason: error instanceof Error ? error.message : 'unknown error',
+        })
       })
-    })
-  }, HISTORY_FLUSH_INTERVAL_MS)
-  historyFlushTimer.unref()
-  // 停机信号路径上同步落盘一次，保住最后一个周期内的增量。
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.once(signal, () => {
-      try {
-        historyStore.flushSync(historyBuffer)
-      } catch {
-        // 停机路径落盘失败不阻断退出。
-      }
-    })
-  }
+    }, HISTORY_FLUSH_INTERVAL_MS)
+    historyFlushTimer.unref()
+    // 停机信号路径上同步落盘一次，保住最后一个周期内的增量。
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+      process.once(signal, () => {
+        try {
+          historyStore.flushSync(historyBuffer)
+        } catch {
+          // 停机路径落盘失败不阻断退出。
+        }
+      })
+    }
 
-  await server.listen()
-  return server
+    await server.listen()
+    return server
+  } catch (error) {
+    hub.close()
+    throw error
+  }
 }
 
 async function run(): Promise<void> {

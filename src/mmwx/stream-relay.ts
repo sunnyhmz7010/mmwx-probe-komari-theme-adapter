@@ -4,8 +4,9 @@ import type { ProbeHistoryBuffer } from './history-buffer.js'
 import type { ProbePayload, ProbeSeriesPayload, SeriesQuery } from './types.js'
 
 const MAX_FRAME_AGE_MS = 12_000
-const IDLE_CLOSE_MS = 30_000
 const RECONNECT_MAX_MS = 30_000
+const WATCHDOG_INTERVAL_MS = 10_000
+const STALE_FRAME_MS = 15_000
 
 export interface ProbeOrigin {
   fetchProbe(): Promise<ProbePayload>
@@ -14,25 +15,43 @@ export interface ProbeOrigin {
   probeHeaders(): Record<string, string>
 }
 
+// WebSocket 工厂可注入：单测用受控假连接替代真实网络。
+export type WebSocketFactory = (url: string, options: { headers: Record<string, string> }) => WebSocket
+
+const defaultWebSocketFactory: WebSocketFactory = (url, options) => new WebSocket(url, options)
+
 /**
- * ProbeStreamRelay 主控降载：单进程内维护一条到主控探针的共享 WebSocket，
- * 把实时快照帧广播给所有下游访客连接，并对 HTTP 快照请求复用最近一帧，
- * 避免按访客数增加主控 WebSocket 与实时数据查询。
+ * ProbeStreamRelay 常驻采样与主控降载：
+ * - 采集层与服务同生命周期：启动即连接主控探针 WebSocket，断线后无条件指数退避重连，
+ *   看门狗在帧龄超阈值（WS 闪断、假活或重连间隙）时用 HTTP 快照兜底采样，
+ *   历史缓冲 7x24 持续积累，不依赖访客在线。
+ * - 分发层把每一帧写入历史缓冲、复用给 HTTP 快照请求并广播给所有下游访客；
+ *   无论访客多少，主控侧始终只有一条连接。
  */
 export class ProbeStreamRelay {
   private upstream: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private idleTimer: ReturnType<typeof setTimeout> | null = null
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null
   private reconnectAttempts = 0
   private latestPayload: ProbePayload | null = null
   private latestAt = 0
   private snapshotRequest: Promise<ProbePayload> | null = null
   private readonly clients = new Set<WebSocket>()
+  private readonly wsFactory: WebSocketFactory
 
   public constructor(
     private readonly origin: ProbeOrigin,
     private readonly history?: ProbeHistoryBuffer,
-  ) {}
+    wsFactory: WebSocketFactory = defaultWebSocketFactory,
+  ) {
+    this.wsFactory = wsFactory
+  }
+
+  // 常驻采集入口：启动即连接上游并开启帧龄看门狗；重复调用幂等。
+  public start(): void {
+    this.startWatchdog()
+    this.ensureUpstream()
+  }
 
   public async fetchProbe(): Promise<ProbePayload> {
     if (this.latestPayload !== null && this.frameAgeMs() <= MAX_FRAME_AGE_MS) {
@@ -47,19 +66,16 @@ export class ProbeStreamRelay {
 
   public subscribe(downstream: WebSocket): void {
     this.clients.add(downstream)
-    this.cancelIdleClose()
     const latest = this.latestPayload
     if (latest !== null && this.frameAgeMs() <= MAX_FRAME_AGE_MS) {
       this.sendTo(downstream, latest)
     } else {
       void this.seed(downstream)
     }
-    this.ensureUpstream()
   }
 
   public unsubscribe(downstream: WebSocket): void {
     this.clients.delete(downstream)
-    this.onClientCountChanged()
   }
 
   public close(): void {
@@ -72,7 +88,7 @@ export class ProbeStreamRelay {
     }
     this.clients.clear()
     this.cancelReconnect()
-    this.cancelIdleClose()
+    this.stopWatchdog()
     this.closeUpstream()
   }
 
@@ -125,13 +141,12 @@ export class ProbeStreamRelay {
   }
 
   private ensureUpstream(): void {
-    if (this.clients.size === 0) return
     if (this.upstream && (this.upstream.readyState === WebSocket.OPEN || this.upstream.readyState === WebSocket.CONNECTING)) return
     this.connectUpstream()
   }
 
   private connectUpstream(): void {
-    const socket = new WebSocket(this.origin.streamUrl(), {
+    const socket = this.wsFactory(this.origin.streamUrl(), {
       headers: this.origin.probeHeaders(),
     })
     this.upstream = socket
@@ -151,28 +166,16 @@ export class ProbeStreamRelay {
     socket.on('close', () => {
       if (this.upstream !== socket) return
       this.upstream = null
-      this.onUpstreamClosed()
+      // 常驻采样：无论是否有下游访客都无条件重连。
+      this.scheduleReconnect()
     })
     socket.on('error', () => {
-      // close 事件随后触发，统一在 onUpstreamClosed 中处理。
+      // close 事件随后触发，统一在 close 回调中处理重连。
     })
-  }
-
-  private onUpstreamClosed(): void {
-    if (this.clients.size > 0) this.scheduleReconnect()
-  }
-
-  private onClientCountChanged(): void {
-    if (this.clients.size > 0) {
-      this.cancelIdleClose()
-      this.ensureUpstream()
-    } else {
-      this.scheduleIdleClose()
-    }
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer || this.clients.size === 0) return
+    if (this.reconnectTimer) return
     const delay = Math.min(1_000 * (2 ** this.reconnectAttempts), RECONNECT_MAX_MS)
     this.reconnectAttempts += 1
     this.reconnectTimer = setTimeout(() => {
@@ -187,21 +190,19 @@ export class ProbeStreamRelay {
     this.reconnectTimer = null
   }
 
-  private scheduleIdleClose(): void {
-    if (this.idleTimer) return
-    this.cancelReconnect()
-    this.idleTimer = setTimeout(() => {
-      this.idleTimer = null
-      if (this.clients.size > 0) return
-      this.reconnectAttempts = 0
-      this.closeUpstream()
-    }, IDLE_CLOSE_MS)
+  // 看门狗：帧龄超阈值说明上游 WS 未正常推帧（闪断、假活、重连间隙），
+  // 主动拉一次 HTTP 快照兜底采样；ensureSnapshot 自带并发去重。
+  private startWatchdog(): void {
+    if (this.watchdogTimer) return
+    this.watchdogTimer = setInterval(() => {
+      if (this.frameAgeMs() > STALE_FRAME_MS) void this.ensureSnapshot()
+    }, WATCHDOG_INTERVAL_MS)
   }
 
-  private cancelIdleClose(): void {
-    if (!this.idleTimer) return
-    clearTimeout(this.idleTimer)
-    this.idleTimer = null
+  private stopWatchdog(): void {
+    if (!this.watchdogTimer) return
+    clearInterval(this.watchdogTimer)
+    this.watchdogTimer = null
   }
 
   private closeUpstream(): void {
@@ -209,7 +210,7 @@ export class ProbeStreamRelay {
     this.upstream = null
     if (!socket) return
     try {
-      socket.close(1000, 'ProbeHub idle')
+      socket.close(1000, 'ProbeHub shutting down')
     } catch {
       // 上游已关闭。
     }
