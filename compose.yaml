@@ -10,6 +10,5 @@ services:
       - PROBE_TOKEN=replace-with-probe-token
       - THEME_REPO=https://github.com/example/komari-theme
       - THEME_REF=main
-      # 可选：GitHub 克隆加速代理前缀（如 https://gh-proxy.com），留空直连
       - THEME_GIT_PROXY=
       - ADMIN_TOKEN=replace-with-random-admin-token
