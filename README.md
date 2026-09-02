@@ -43,6 +43,8 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 一台能访问妙妙屋 X 主控和 GitHub 的 VPS、NAS 或本地 Docker 环境
 - Docker 与 Docker Compose
 - 一个可公开拉取的 Komari 主题 GitHub 仓库
+- 常驻 CPU 低于单核 5%，内存 100~200MB，磁盘为镜像本体数百 MB 加约 6MB 历史缓冲（每 5 分钟覆盖写、不随时间累积，日均覆盖写入约 1.7GB）
+- 构建主题时内存与磁盘瞬时需求更高，建议预留 1GB 内存和 1GB 可用磁盘
 
 ### 📦 Docker Compose（推荐）
 
