@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { ProbePayload, ProbeSeriesPayload, ProbeServer } from '../src/mmwx/types.js'
-import { toKomariNode, toKomariPublicNodes, toKomariRecord, toLoadHistory, toPingHistory, toSystemMetricHistory } from '../src/komari/mapper.js'
+import { toKomariNode, toKomariNodeStatus, toKomariPublicNodes, toKomariRecord, toLoadHistory, toPingHistory, toSystemMetricHistory } from '../src/komari/mapper.js'
 import { KomariDataService } from '../src/komari/service.js'
 
 const now = new Date('2026-08-21T00:00:00.000Z')
@@ -46,6 +46,85 @@ test('maps stable node UUIDs and metrics with location fallback', () => {
   assert.equal(node.network?.totalDown, 2000)
   assert.deepEqual(node.load, { load1: 0.1, load5: 0.2, load15: 0.3 })
   assert.equal(node.traffic_period, 'monthly')
+})
+
+test('maps billing-period traffic with adjustment into network totals (both mode)', () => {
+  const node = toKomariNode(server({
+    totalUpload: 8888,
+    totalDownload: 9999,
+    traffic_used_up: 600,
+    traffic_used_down: 400,
+    traffic_used_total: 1000,
+    traffic_used: 900,
+    traffic_stats_mode: 'both',
+  }), 0)
+
+  const totalUp = node.network?.totalUp
+  const totalDown = node.network?.totalDown
+  assert.ok(totalUp !== undefined && totalDown !== undefined)
+  assert.ok(Math.abs(totalUp - 540) < 1e-6)
+  assert.ok(Math.abs(totalDown - 360) < 1e-6)
+  assert.ok(Math.abs(totalUp + totalDown - 900) < 1e-6)
+})
+
+test('keeps exact period traffic when adjustment is zero', () => {
+  const node = toKomariNode(server({
+    traffic_used_up: 600,
+    traffic_used_down: 400,
+    traffic_used: 1000,
+    traffic_stats_mode: 'both',
+  }), 0)
+
+  assert.equal(node.network?.totalUp, 600)
+  assert.equal(node.network?.totalDown, 400)
+})
+
+test('splits billing-period traffic per stats mode', () => {
+  const uploadNode = toKomariNode(server({
+    traffic_used_up: 600,
+    traffic_used_down: 400,
+    traffic_used: 850,
+    traffic_stats_mode: 'upload',
+  }), 0)
+  assert.equal(uploadNode.network?.totalUp, 850)
+  assert.equal(uploadNode.network?.totalDown, 400)
+
+  const maxNode = toKomariNode(server({
+    traffic_used_up: 600,
+    traffic_used_down: 400,
+    traffic_used: 650,
+    traffic_stats_mode: 'max',
+  }), 0)
+  assert.equal(maxNode.network?.totalUp, 650)
+  assert.equal(maxNode.network?.totalDown, 400)
+})
+
+test('exposes billing-period traffic on node latest status', () => {
+  const status = toKomariNodeStatus(server({
+    cumulative_up: 8888,
+    cumulative_down: 9999,
+    traffic_used_up: 600,
+    traffic_used_down: 400,
+    traffic_used: 900,
+    traffic_stats_mode: 'both',
+  }), 0, now)
+
+  assert.ok(Math.abs(status.net_total_up - 540) < 1e-6)
+  assert.ok(Math.abs(status.net_total_down - 360) < 1e-6)
+  assert.ok(Math.abs(status.net_total_out! - status.net_total_up) < 1e-6)
+  assert.ok(Math.abs(status.net_total_down_alt! - status.net_total_down) < 1e-6)
+})
+
+test('falls back to cumulative counters on latest status without period fields', () => {
+  const status = toKomariNodeStatus(server({
+    totalUpload: undefined,
+    totalDownload: undefined,
+    cumulative_up: 8888,
+    cumulative_down: 9999,
+  }), 0, now)
+
+  assert.equal(status.net_total_up, 8888)
+  assert.equal(status.net_total_down, 9999)
 })
 
 test('uses country when region is unavailable and filters invalid numbers', () => {
@@ -626,6 +705,67 @@ test('uses current probe values as metric fallback when system history omits ava
     'connections.tcp': 9,
     'connections.udp': 3,
   })
+})
+
+test('emits per-bucket deltas for traffic.up/down while keeping net.total.up cumulative', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server()] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({
+      bucket_sec: 300,
+      generated_at: 1787400000,
+      systems: [{
+        serverId: 0,
+        points: [
+          { timestamp: 1787398800, cumulative_up: 100, cumulative_down: 200 },
+          { timestamp: 1787399100, cumulative_up: 250, cumulative_down: 150 },
+          { timestamp: 1787399400, cumulative_up: 400, cumulative_down: 100 },
+        ],
+      }],
+    }),
+  })
+
+  const metrics = await service.getQueryMetrics({
+    entity_id: 'mmwx-0',
+    metric_keys: ['traffic.up', 'traffic.down', 'net.total.up'],
+    hours: 1,
+  })
+
+  const valuesByMetric = Object.fromEntries(metrics.series.map((item) => [item.metric_key, item.points.map((point) => point.value)]))
+  assert.deepEqual(valuesByMetric['traffic.up'], [0, 150, 150])
+  assert.deepEqual(valuesByMetric['traffic.down'], [0, 0, 0])
+  assert.deepEqual(valuesByMetric['net.total.up'], [100, 250, 400])
+})
+
+test('falls back to latest daily traffic for traffic.up/down snapshot queries', async () => {
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      servers: [server({
+        totalUpload: undefined,
+        totalDownload: undefined,
+        cumulative_up: 999999,
+        cumulative_down: 888888,
+        daily_traffic: [
+          { date: '2026-09-06', uplink: 10, downlink: 20, total: 30 },
+          { date: '2026-09-07', uplink: 1234, downlink: 567, total: 1801 },
+        ],
+      })],
+    }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({
+      bucket_sec: 300,
+      generated_at: 1787400000,
+    }),
+  })
+
+  const metrics = await service.getQueryMetrics({
+    entity_id: 'mmwx-0',
+    metric_keys: ['traffic.up', 'traffic.down', 'net.total.up'],
+    hours: 1,
+  })
+
+  const valuesByMetric = Object.fromEntries(metrics.series.map((item) => [item.metric_key, item.points.map((point) => point.value)]))
+  assert.deepEqual(valuesByMetric['traffic.up'], [1234])
+  assert.deepEqual(valuesByMetric['traffic.down'], [567])
+  assert.deepEqual(valuesByMetric['net.total.up'], [999999])
 })
 
 test('derives Junimo homepage ping bindings from available public ping tasks', async () => {

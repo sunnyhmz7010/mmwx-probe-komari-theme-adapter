@@ -51,12 +51,41 @@ function loadAverage(value: ProbeServer['load'] | ProbeServer['loadavg'] | MmwxS
   return Object.keys(load).length > 0 ? load : undefined
 }
 
+// 妙妙屋主控页面展示的「已用流量」是计费周期用量（traffic_used，已含 traffic_adjustment
+// 并按主控统计模式计算），而 Komari 语义的 totalUp/totalDown 是开机累计计数器，两者口径不同。
+// 这里把计费用量按统计模式分摊回上下行两个方向，保证主题聚合后的合计与主控显示一致：
+// - both（默认）：按 traffic_used_up : traffic_used_down 比例缩放，使 up + down === traffic_used
+// - upload / download：计费方向直接取 traffic_used，另一方向保持原始周期用量
+// - max：较大方向取 traffic_used（另一方向不超过它），保证 max(up, down) === traffic_used
+function periodTrafficUpDown(server: ProbeServer): { up: number; down: number } | undefined {
+  const rawUp = numberOrUndefined(server.traffic_used_up)
+  const rawDown = numberOrUndefined(server.traffic_used_down)
+  const billed = firstFinite([server.traffic_used, server.traffic_used_total])
+  if (rawUp === undefined && rawDown === undefined && billed === undefined) return undefined
+  const up = rawUp ?? 0
+  const down = rawDown ?? 0
+  const mode = stringOrDefault(server.traffic_stats_mode, 'both').toLowerCase()
+  if (mode === 'upload') return { up: billed ?? up, down }
+  if (mode === 'download') return { up, down: billed ?? down }
+  if (mode === 'max') {
+    if (billed === undefined) return { up, down }
+    if (up >= down) return { up: billed, down: Math.min(down, billed) }
+    return { up: Math.min(up, billed), down: billed }
+  }
+  if (billed === undefined) return { up, down }
+  const rawSum = up + down
+  if (rawSum <= 0) return { up, down }
+  const factor = billed / rawSum
+  return { up: up * factor, down: down * factor }
+}
+
 function network(server: ProbeServer): KomariNetwork | undefined {
   const result: KomariNetwork = {}
   const up = firstFinite([server.upload, server.upload_speed])
   const down = firstFinite([server.download, server.download_speed])
-  const totalUp = firstFinite([server.totalUpload, server.net_total_up, server.cumulative_up, server.traffic_used_up])
-  const totalDown = firstFinite([server.totalDownload, server.net_total_down, server.cumulative_down, server.traffic_used_down])
+  const periodTraffic = periodTrafficUpDown(server)
+  const totalUp = periodTraffic?.up ?? firstFinite([server.totalUpload, server.net_total_up, server.cumulative_up, server.traffic_used_up])
+  const totalDown = periodTraffic?.down ?? firstFinite([server.totalDownload, server.net_total_down, server.cumulative_down, server.traffic_used_down])
   const total = numberOrUndefined(server.traffic_used_total)
   const uplink = numberOrUndefined(server.uplink)
   const downlink = numberOrUndefined(server.downlink)
@@ -512,6 +541,7 @@ export function toKomariNodeStatusMap(payload: ProbePayload, now = new Date()): 
 
 export function toKomariNodeStatus(server: ProbeServer, index: number, now = new Date()): KomariNodeStatus {
   const load = loadAverage(server.load ?? server.loadavg)
+  const periodTraffic = periodTrafficUpDown(server)
   const status: KomariNodeStatus = {
     client: `mmwx-${index}`,
     time: dateTimeOrDefault(server.updated_at, now),
@@ -529,10 +559,10 @@ export function toKomariNodeStatus(server: ProbeServer, index: number, now = new
     disk_total: numberOrUndefined(server.disk_total) ?? 0,
     net_in: firstFinite([server.download, server.download_speed]) ?? 0,
     net_out: firstFinite([server.upload, server.upload_speed]) ?? 0,
-    net_total_up: firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
-    net_total_down: firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
-    net_total_out: firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
-    net_total_down_alt: firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
+    net_total_up: periodTraffic?.up ?? firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
+    net_total_down: periodTraffic?.down ?? firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
+    net_total_out: periodTraffic?.up ?? firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
+    net_total_down_alt: periodTraffic?.down ?? firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
     process: numberOrUndefined(server.process),
     connections: numberOrUndefined(server.connections),
     connections_udp: numberOrUndefined(server.connections_udp),

@@ -232,6 +232,7 @@ http://localhost:8080/admin
 - 历史采样缓冲：实时帧同步写入进程内 `ProbeHistoryBuffer`，Komari 兼容层的 ping / 负载历史优先返回逐帧密度样本；缓冲保留最近 1 小时逐帧、更早按分钟降采样、共 25 小时，并每 5 分钟落盘到运行目录 `history-buffer.json`、启动时自动恢复，进程重启不丢历史；仅当运行目录数据不存在（如未映射卷的容器重建）时由主控聚合序列填补冷启动窗口（主控聚合桶粒度较粗——实测约 30 分钟/桶，直接输出会导致 Komari 主题历史块出现空白段）
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
 - 字段映射：地区字段优先取 `region_country`（ISO 代码）供主题解析国旗；续费货币把 ISO 代码转换为 Komari 官方 12 种货币符号（`CNY`→`¥`、`USD`→`$`、`CAD`→`CA$` 等）；`ping.loss` 指标按 Komari 语义输出 0~1 比例
+- 流量口径：`/api/nodes`、`/api/public` 与 `common:getNodesLatestStatus` 中的 `totalUp/totalDown`、`net_total_up/net_total_down` 映射为妙妙屋主控的**计费周期已用流量**（`traffic_used`，已含 `traffic_adjustment`，按主控 `traffic_stats_mode` 把调整值分摊回上下行，`both` 按比例缩放使合计与主控一致；`upload`/`download` 计费方向直取，`max` 取较大方向），无周期字段时回退开机累计计数器；`public:queryMetrics` 的 `traffic.up/traffic.down` 输出**每个时间桶的增量字节**（主题逐点求和得当日流量），累计序列（`cumulative_*`）自动转换为相邻差分，而 `net.total.up/net.total.down` 仍保持开机累计计数器语义，供 records 类接口做差值统计
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点
 - 公共设置：`common:getPublicInfo` 和 `public:getPublicSettings` 都基于同一份主题配置和探针快照生成

@@ -1024,6 +1024,15 @@ function currentMetricSeries(entityId: string, metricKey: string, server: ProbeS
   }
 }
 
+// 无历史序列时的兜底：主题对 traffic.up/down 序列逐点求和得出当日流量，
+// 因此这里必须给出最近一天的用量，而不是累计计数器（否则计数器会被当成一个桶计进当日流量）。
+function lastDailyTrafficValue(server: ProbeServer, direction: 'uplink' | 'downlink'): number | undefined {
+  const entries = Array.isArray(server.daily_traffic) ? server.daily_traffic : []
+  const last = entries[entries.length - 1]
+  if (!last) return undefined
+  return numberOrUndefined(last[direction])
+}
+
 function currentMetricValue(server: ProbeServer, metricKey: string): number | undefined {
   switch (metricKey) {
     case 'cpu.usage': return firstFinite([server.cpu, server.cpu_pct])
@@ -1039,10 +1048,10 @@ function currentMetricValue(server: ProbeServer, metricKey: string): number | un
     case 'disk.total': return numberOrUndefined(server.disk_total)
     case 'net.in.rate': return firstFinite([server.download, server.download_speed])
     case 'net.out.rate': return firstFinite([server.upload, server.upload_speed])
-    case 'net.total.up':
-    case 'traffic.up': return firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up])
-    case 'net.total.down':
-    case 'traffic.down': return firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down])
+    case 'net.total.up': return firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up])
+    case 'net.total.down': return firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down])
+    case 'traffic.up': return lastDailyTrafficValue(server, 'uplink')
+    case 'traffic.down': return lastDailyTrafficValue(server, 'downlink')
     case 'process.count': return numberOrUndefined(server.process)
     case 'connections.tcp': return numberOrUndefined(server.connections)
     case 'connections.udp': return numberOrUndefined(server.connections_udp)
@@ -1103,26 +1112,69 @@ function collectPingQueryMetricSeries(
   return result
 }
 
+// LuminaPlus 等主题按「逐点求和」消费 queryMetrics 的 traffic.up/traffic.down 序列，
+// 这两个指标必须输出每个时间桶的增量字节；net.total.up/down 才是累计计数器语义。
+// 主控序列的累计字段（cumulative_* / net_total_*）在此转换为相邻差分（计数器回退记 0）。
+function toDeltaMetricPoints(points: readonly KomariMetricPoint[]): KomariMetricPoint[] {
+  const sorted = [...points].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
+  let previous: number | undefined
+  return sorted.map((point) => {
+    if (point.count === 0 || point.value === null || !Number.isFinite(point.value)) {
+      return { ...point, value: null, count: 0 }
+    }
+    const current = point.value
+    if (previous === undefined) {
+      previous = current
+      return { ...point, value: 0, count: 1 }
+    }
+    const delta = Math.max(0, current - previous)
+    previous = current
+    return { ...point, value: delta, count: 1 }
+  })
+}
+
 function systemMetricSeriesFromPoints(entityId: string, metricKey: string, points: readonly MmwxSystemSeriesPoint[]): KomariMetricSeries | undefined {
   const mapped = points.map((point) => systemMetricPoint(point, metricKey)).filter((point): point is KomariMetricPoint => point !== undefined)
   if (mapped.length === 0) return undefined
+  const resolved = isCumulativeTrafficSeries(metricKey, points) ? toDeltaMetricPoints(mapped) : mapped
   return {
     metric_key: metricKey,
     entity_id: entityId,
     interval_seconds: inferIntervalSeconds(mapped),
-    points: mapped,
+    points: resolved,
   }
+}
+
+// 判断 traffic.up/down 序列的取值是否来自累计字段（cumulative_* / net_total_*）：
+// 是则需要转增量；若主控只给了 traffic_*（按字段名为桶内增量），则原样输出。
+function isCumulativeTrafficSeries(metricKey: string, points: readonly MmwxSystemSeriesPoint[]): boolean {
+  if (metricKey !== 'traffic.up' && metricKey !== 'traffic.down') return false
+  return points.some((point) => {
+    const cumulative = metricKey === 'traffic.up'
+      ? numberOrUndefined(point.cumulative_up ?? point.net_total_up)
+      : numberOrUndefined(point.cumulative_down ?? point.net_total_down)
+    return cumulative !== undefined
+  })
 }
 
 function directMetricSeriesFromPayload(entityId: string, metricKey: string, payload: MmwxSystemMetricSeries): KomariMetricSeries | undefined {
   const points = directMetricPoints(payload, metricKey)
   if (points.length === 0) return undefined
+  const resolved = isCumulativeTrafficDirectSeries(metricKey, payload) ? toDeltaMetricPoints(points) : points
   return {
     metric_key: metricKey,
     entity_id: entityId,
     interval_seconds: inferIntervalSeconds(points),
-    points,
+    points: resolved,
   }
+}
+
+// 同 systemMetricSeriesFromPoints：直连序列里 traffic.up/down 只有在累计字段
+// （cumulative_*）真实存在时才需要转增量，否则 traffic_* 本身就是桶内增量。
+function isCumulativeTrafficDirectSeries(metricKey: string, payload: MmwxSystemMetricSeries): boolean {
+  if (metricKey === 'traffic.up') return Array.isArray(payload.cumulative_up) && payload.cumulative_up.length > 0
+  if (metricKey === 'traffic.down') return Array.isArray(payload.cumulative_down) && payload.cumulative_down.length > 0
+  return false
 }
 
 function directMetricPoints(payload: MmwxSystemMetricSeries, metricKey: string): KomariMetricPoint[] {
