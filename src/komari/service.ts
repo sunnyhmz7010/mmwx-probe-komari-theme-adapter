@@ -468,7 +468,7 @@ export class KomariDataService {
     }
     return {
       sitename,
-      description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+      description: '',
       theme: probe.appearance?.theme || themeNameFromSource(this.themeSource),
       theme_settings: themeSettings,
       private_site: false,

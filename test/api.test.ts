@@ -15,7 +15,7 @@ interface TestResponse {
 
 const defaultPublicSettings = {
   sitename: '妙妙屋 X 主控',
-  description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+  description: '',
   theme: 'junimo',
   theme_settings: {},
   private_site: false,
@@ -505,7 +505,7 @@ test('RPC2 exposes the full Komari compatibility payloads needed by adhesive-not
   }
   const settings = {
     sitename: '妙妙屋 X 主控',
-    description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+    description: '',
     theme: 'AdhesiveNote',
     theme_settings: { layout: 'paper' },
     private_site: false,

@@ -571,7 +571,7 @@ test('projects public settings from probe snapshot and loaded theme metadata', a
 
   assert.deepEqual(settings, {
     sitename: '星穹主控',
-    description: '已部署支持独立探针访问密钥的妙妙屋 X 主控',
+    description: '',
     theme: 'Glassmorphism',
     theme_settings: themeSettings,
     private_site: false,
