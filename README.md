@@ -193,6 +193,11 @@ http://localhost:8080/admin
 
 ### 🧪 已实测主题仓库
 
+理论上`https://raw.githubusercontent.com/komari-monitor/
+theme-market/main/v1.json`显示的主题均可正常安装。
+
+下表展示了一些开发者实测的数据：
+
 | 仓库地址 | 仓库分支 | 页面显示 | 数据兼容性 | 主题配置 |
 | --- | :---: | :---: | --- | --- |
 | `https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
