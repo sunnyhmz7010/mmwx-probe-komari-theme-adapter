@@ -193,10 +193,10 @@ http://localhost:8080/admin
 
 ### 🧪 已实测主题仓库
 
-理论上`https://raw.githubusercontent.com/komari-monitor/
-theme-market/main/v1.json`显示的主题均可正常安装。
+理论上 `https://raw.githubusercontent.com/komari-monitor/
+theme-market/main/v1.json` 显示的主题均可正常安装。
 
-下表展示了一些开发者实测的数据：
+下表展示了一些开发者实测的主题：
 
 | 仓库地址 | 仓库分支 | 页面显示 | 数据兼容性 | 主题配置 |
 | --- | :---: | :---: | --- | --- |
