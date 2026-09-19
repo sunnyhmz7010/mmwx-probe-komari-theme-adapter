@@ -8,7 +8,7 @@ import { KomariDataService } from '../komari/service.js'
 import type { LoadedTheme } from '../theme/types.js'
 import type { ApiRouter } from './api.js'
 import { dispatchRpc2, getAdminSessionMe } from './api.js'
-import { serveStatic } from './static.js'
+import { serveFavicon, serveStatic } from './static.js'
 import type { ProbeStreamRelay } from '../mmwx/stream-relay.js'
 import { ADAPTER_VERSION } from '../version.js'
 import { noopLogger, type Logger } from '../log.js'
@@ -38,6 +38,7 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
     if (await api.handle(request, response)) return
     if (serveThemeManifest(theme, request, response)) return
     if (serveAdmin(theme, request, response)) return
+    if (await serveFavicon(snapshotService, request, response)) return
     if (await serveStatic(theme.directory, request, response)) return
     return jsonNotFound(response)
   })

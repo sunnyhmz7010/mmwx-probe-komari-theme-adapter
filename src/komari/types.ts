@@ -221,6 +221,7 @@ export interface KomariNode {
   name: string
   online: boolean
   region?: string
+  tags?: string
   cpu?: number
   memory?: number
   ram?: KomariResource

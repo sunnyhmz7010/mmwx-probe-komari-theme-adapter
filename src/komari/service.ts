@@ -569,9 +569,8 @@ export class KomariDataService {
     }
 
     if (pingMetricKeys.length > 0) {
-      const histories = await Promise.all(entityIds.map(async (entityId) => this.getPingHistory({ ...query, uuid: entityId })))
       series.push(...collectPingQueryMetricSeries(
-        mergePingHistories(histories),
+        await this.getPingHistory(query),
         entityIds,
         pingMetricKeys,
         normalizeTaskIdFilter(resolveNumericList(query.task_ids ?? query.task_id)),
@@ -590,17 +589,12 @@ export class KomariDataService {
   public async getPingMetricStats(query: SeriesQuery): Promise<KomariPingMetricStats> {
     const entityIds = await this.resolveEntityIdsOrAll(query)
     const taskIds = normalizeTaskIdFilter(resolveNumericList(query.task_ids ?? query.task_id))
-    const histories = await Promise.all(entityIds.map(async (entityId) => this.getPingHistory({ ...query, uuid: entityId })))
-    const combined = mergePingHistories(histories)
-    const stats = summarisePingMetricStats(combined, entityIds, taskIds)
+    const stats = summarisePingMetricStats(await this.getPingHistory(query), entityIds, taskIds)
     return { count: stats.length, stats }
   }
 
   public async getPublicPingTasks(query: SeriesQuery = {}): Promise<KomariPublicPingTask[]> {
-    const entityIds = await this.resolveEntityIdsOrAll(query)
-    const histories = await Promise.all(entityIds.map(async (entityId) => this.getPingHistory({ ...query, uuid: entityId })))
-    const combined = mergePingHistories(histories)
-    const tasks = combined.tasks.map((task) => ({
+    const tasks = (await this.getPingHistory(query)).tasks.map((task) => ({
       ...task,
       target: task.name,
     }))
@@ -887,10 +881,19 @@ function resolveNumericList(value: unknown): number[] {
 }
 
 function seriesBounds(series: readonly KomariMetricSeries[]): { start?: string; end?: string } {
-  const times = series.flatMap((item) => item.points.map((point) => Date.parse(point.time)).filter((value) => Number.isFinite(value)))
-  if (times.length === 0) return {}
-  const start = new Date(Math.min(...times))
-  const end = new Date(Math.max(...times))
+  let startMs = Number.POSITIVE_INFINITY
+  let endMs = Number.NEGATIVE_INFINITY
+  for (const item of series) {
+    for (const point of item.points) {
+      const timestamp = Date.parse(point.time)
+      if (!Number.isFinite(timestamp)) continue
+      if (timestamp < startMs) startMs = timestamp
+      if (timestamp > endMs) endMs = timestamp
+    }
+  }
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return {}
+  const start = new Date(startMs)
+  const end = new Date(endMs)
   return { start: start.toISOString(), end: end.toISOString() }
 }
 

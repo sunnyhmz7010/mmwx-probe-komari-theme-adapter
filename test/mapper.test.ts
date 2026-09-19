@@ -48,6 +48,17 @@ test('maps stable node UUIDs and metrics with location fallback', () => {
   assert.equal(node.traffic_period, 'monthly')
 })
 
+test('keeps return-route tags on lightweight node snapshots', () => {
+  const node = toKomariNode(server({
+    return_routes: [
+      { carrier: 'telecom', route_type: 'CN2 GIA' },
+      { carrier: 'unicom', route_type: '4837' },
+    ],
+  }), 0)
+
+  assert.equal(node.tags, '电信 CN2 GIA<gold>;联通 4837<blue>')
+})
+
 test('maps billing-period traffic with adjustment into network totals (both mode)', () => {
   const node = toKomariNode(server({
     totalUpload: 8888,
@@ -302,6 +313,16 @@ test('merges original tags with return route tags without duplication', () => {
   })
 
   assert.equal(node.tags, '白嫖中;电信 163<blue>')
+})
+
+test('normalizes plain public remarks into Nezha note JSON', () => {
+  const [plain] = toKomariPublicNodes({ servers: [server({ public_remark: 'vmrack' })] })
+  const [structured] = toKomariPublicNodes({
+    servers: [server({ public_remark: '{"planDataMod":{"extra":"custom"}}' })],
+  })
+
+  assert.equal(plain.public_remark, '{"planDataMod":{"extra":"vmrack"}}')
+  assert.equal(structured.public_remark, '{"planDataMod":{"extra":"custom"}}')
 })
 
 test('maps system metrics with separate realtime and cumulative network fields', () => {
@@ -669,6 +690,60 @@ test('maps ping buckets into Komari metric query series', async () => {
   ])
   assert.deepEqual(metrics.series[0].points.map((point) => point.value), [25, 30])
   assert.deepEqual(metrics.series[1].points.map((point) => point.value), [0, 0.02])
+})
+
+test('loads multi-node ping metrics once per node without duplicating entity history', async () => {
+  const seenServers: string[] = []
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server({ name: 'node-0' }), server({ name: 'node-1' })] }),
+    fetchSeries: async (query: Record<string, unknown>): Promise<ProbeSeriesPayload> => {
+      seenServers.push(String(query.server))
+      return {
+        all_series: [{
+          key: 'google',
+          label: 'Google',
+          buckets: [{ ms: Number(query.server) + 25, loss: 0 }],
+        }],
+      }
+    },
+  })
+
+  const metrics = await service.getQueryMetrics({
+    entity_ids: ['mmwx-0', 'mmwx-1'],
+    metric_keys: ['ping.latency_ms', 'ping.loss'],
+    hours: 1,
+  })
+
+  assert.deepEqual(seenServers.sort(), ['0', '1'])
+  assert.equal(metrics.series.length, 4)
+  assert.deepEqual(metrics.series
+    .filter((item) => item.metric_key === 'ping.latency_ms')
+    .map((item) => item.entity_id)
+    .sort(), ['mmwx-0', 'mmwx-1'])
+})
+
+test('computes metric bounds without spreading large point arrays', async () => {
+  const pointCount = 70_000
+  const points = Array.from({ length: pointCount }, (_, index) => ({
+    timestamp: 1_787_400_000 + index * 300,
+    cpu: index % 100,
+  }))
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server({ name: 'node-0' }), server({ name: 'node-1' })] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({
+      systems: [{ serverId: 0, points }],
+    }),
+  })
+
+  const metrics = await service.getQueryMetrics({
+    entity_ids: ['mmwx-0', 'mmwx-1'],
+    metric_keys: ['cpu.usage'],
+    hours: 1,
+  })
+
+  assert.equal(metrics.series.length, 2)
+  assert.equal(metrics.series[0].points.length, pointCount)
+  assert.equal(metrics.start, new Date(1_787_400_000 * 1000).toISOString())
 })
 
 test('uses current probe values as metric fallback when system history omits available fields', async () => {

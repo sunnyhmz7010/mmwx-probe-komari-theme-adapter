@@ -169,6 +169,35 @@ test('serves static assets and SPA fallback safely', async () => {
   }
 })
 
+test('serves the probe icon from /favicon.ico instead of the SPA HTML fallback', async () => {
+  const theme = await tempTheme()
+  const port = await reservePort()
+  const mmwx = {
+    fetchProbe: async () => ({
+      icon: 'data:image/png;base64,iVBORw0KGgo=',
+      servers: [{ name: 'node-0', online: true }],
+    }),
+    fetchSeries: async () => ({ systems: [] }),
+    streamUrl: () => 'ws://127.0.0.1:1/api/public/probe-ws',
+    probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'probe-secret' }),
+  } as never
+  const hub = new ProbeStreamRelay(mmwx)
+  hub.start()
+  const api = createApiRouter(new KomariDataService(hub))
+  const serverHandle = createHttpServer(config(), theme, api, hub, undefined, port)
+
+  try {
+    await serverHandle.listen()
+    const response = await fetch(`http://127.0.0.1:${port}/favicon.ico`)
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('content-type') ?? '', /image\/png/)
+    assert.deepEqual([...new Uint8Array(await response.arrayBuffer())].slice(0, 4), [137, 80, 78, 71])
+  } finally {
+    await serverHandle.close()
+    await rm(theme.directory, { recursive: true, force: true })
+  }
+})
+
 test('routes websocket clients and broadcasts a shared stream hub connection', async () => {
   const theme = await tempTheme()
   const upstream = new WebSocketServer({ port: 0 })

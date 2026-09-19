@@ -139,6 +139,8 @@ export function toKomariNode(server: ProbeServer, index: number): KomariNode {
   if (disk) node.disk = disk
   if (load) node.load = load
   if (mappedNetwork) node.network = mappedNetwork
+  const tags = mergeTags(stringOrUndefined(server.tags), routeTags(server))
+  if (tags) node.tags = tags
   const mappedTrafficPeriod = trafficPeriod(server)
   if (mappedTrafficPeriod) node.traffic_period = mappedTrafficPeriod
   return node
@@ -400,10 +402,29 @@ function regionLabel(server: ProbeServer): string {
     || ''
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizePublicRemark(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (isRecord(parsed) && (isRecord(parsed.billingDataMod) || isRecord(parsed.planDataMod))) {
+      return trimmed
+    }
+  } catch {
+    // 普通备注不是 JSON 时，按 Nezha 的 planDataMod.extra 兼容格式返回。
+  }
+  return JSON.stringify({ planDataMod: { extra: trimmed } })
+}
+
 function publicRemark(server: ProbeServer): string | undefined {
-  return server.public_remark?.trim()
-    || server.provider_name?.trim()
-    || server.host?.trim()
+  return normalizePublicRemark(server.public_remark)
+    || normalizePublicRemark(server.provider_name)
+    || normalizePublicRemark(server.host)
     || undefined
 }
 

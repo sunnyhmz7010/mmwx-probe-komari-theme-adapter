@@ -1,6 +1,7 @@
 import { lstat, readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { ProbePayload } from '../mmwx/types.js'
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -25,6 +26,10 @@ const BUILTIN_ASSET_PREFIXES = ['/assets/flags/', '/assets/logo/']
 interface Candidate {
   filePath: string
   contentType: string
+}
+
+interface ProbeIconSource {
+  getProbePayload(): Promise<ProbePayload>
 }
 
 function isWithin(parent: string, candidate: string): boolean {
@@ -92,6 +97,50 @@ async function serveCandidate(candidate: Candidate, request: IncomingMessage, re
   response.end(body)
 }
 
+function decodeImageDataUri(value: unknown): { body: Buffer; contentType: string } | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed.toLowerCase().startsWith('data:')) return null
+  const comma = trimmed.indexOf(',')
+  if (comma < 0) return null
+  const metadata = trimmed.slice(5, comma)
+  const encoded = trimmed.slice(comma + 1)
+  const parts = metadata.split(';')
+  const contentType = (parts.shift() || 'application/octet-stream').trim().toLowerCase()
+  if (!contentType.startsWith('image/')) return null
+  try {
+    const body = parts.some((part) => part.trim().toLowerCase() === 'base64')
+      ? Buffer.from(encoded, 'base64')
+      : Buffer.from(decodeURIComponent(encoded), 'utf8')
+    if (body.length === 0) return null
+    return { body, contentType }
+  } catch {
+    return null
+  }
+}
+
+export async function serveFavicon(source: ProbeIconSource, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false
+  const url = new URL(request.url ?? '/', 'http://adapter.local')
+  if (url.pathname !== '/favicon.ico') return false
+
+  let payload: ProbePayload
+  try {
+    payload = await source.getProbePayload()
+  } catch {
+    return false
+  }
+  const image = decodeImageDataUri(payload.icon) ?? decodeImageDataUri(payload.logo)
+  if (!image) return false
+  response.writeHead(200, {
+    'Content-Type': image.contentType,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  })
+  response.end(request.method === 'HEAD' ? undefined : image.body)
+  return true
+}
+
 export async function serveStatic(root: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const url = new URL(request.url ?? '/', 'http://adapter.local')
@@ -105,7 +154,7 @@ export async function serveStatic(root: string, request: IncomingMessage, respon
   }
 
   const candidate = url.pathname === '/' ? await indexCandidate(root) : await resolveCandidate(root, url.pathname)
-  const selected = candidate ?? await indexCandidate(root)
+  const selected = candidate ?? (url.pathname === '/favicon.ico' ? null : await indexCandidate(root))
   if (!selected) return false
   await serveCandidate(selected, request, response)
   return true
