@@ -462,6 +462,162 @@ test('serves ping history from the MMWX series without dropping points', async (
   assert.deepEqual(first.tasks.map((task) => task.name), ['Google'])
 })
 
+test('builds public ping tasks from the probe snapshot without loading history', async () => {
+  let seriesCalls = 0
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      servers: [
+        server(),
+        server({ ping: [{ name: 'Google', value: 30, loss: 0 }] }),
+        server({ hidden: true, ping: [{ name: 'Hidden', value: 40, loss: 0 }] }),
+      ],
+    }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => {
+      seriesCalls += 1
+      throw new Error('history should not be requested')
+    },
+  })
+
+  const tasks = await service.getPublicPingTasks()
+
+  assert.equal(seriesCalls, 0)
+  assert.deepEqual(tasks, [
+    { id: 1, name: 'Google', clients: ['mmwx-0', 'mmwx-1'], default_on: true, type: 'icmp', interval: 30, target: 'Google' },
+    { id: 2, name: 'Cloudflare', clients: ['mmwx-0'], default_on: true, type: 'icmp', interval: 30, target: 'Cloudflare' },
+  ])
+})
+
+test('falls back to ping history when the probe snapshot has no tasks', async () => {
+  let probeCalls = 0
+  let seriesCalls = 0
+  const service = new KomariDataService({
+    fetchProbe: async () => {
+      probeCalls += 1
+      return { servers: [server({ ping: undefined })] }
+    },
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => {
+      seriesCalls += 1
+      return {
+        all_series: [{
+          key: 'google',
+          label: 'Google',
+          buckets: [{ ms: 25, loss: 0 }],
+        }],
+      }
+    },
+  })
+
+  const tasks = await service.getPublicPingTasks()
+
+  assert.equal(probeCalls, 1)
+  assert.equal(seriesCalls, 1)
+  assert.deepEqual(tasks.map((task) => task.name), ['Google'])
+})
+
+test('falls back to ping history when only the requested node has no snapshot tasks', async () => {
+  let seriesCalls = 0
+  const service = new KomariDataService({
+    fetchProbe: async () => ({
+      servers: [
+        server({ ping: [{ name: 'Google', value: 25, loss: 0 }] }),
+        server({ ping: undefined }),
+      ],
+    }),
+    fetchSeries: async (query): Promise<ProbeSeriesPayload> => {
+      seriesCalls += 1
+      assert.equal(query.server, '1')
+      return {
+        all_series: [{
+          key: 'cloudflare',
+          label: 'Cloudflare',
+          buckets: [{ ms: 30, loss: 0 }],
+        }],
+      }
+    },
+  })
+
+  const tasks = await service.getPublicPingTasks({ uuid: 'mmwx-1' })
+
+  assert.equal(seriesCalls, 1)
+  assert.deepEqual(tasks.map((task) => ({ name: task.name, clients: task.clients })), [
+    { name: 'Cloudflare', clients: ['mmwx-1'] },
+  ])
+})
+
+test('reuses successful series responses within the cache window', async () => {
+  let seriesCalls = 0
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server()] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => {
+      seriesCalls += 1
+      return {
+        all_series: [{
+          key: 'google',
+          label: 'Google',
+          buckets: [{ ms: 25, loss: 0 }],
+        }],
+      }
+    },
+  })
+
+  const first = await service.getPingHistory({ uuid: 'mmwx-0', hours: 1 })
+  const second = await service.getPingHistory({ uuid: 'mmwx-0', hours: 1 })
+
+  assert.equal(seriesCalls, 1)
+  assert.deepEqual(second, first)
+})
+
+test('shares cached ping series across equivalent Komari query shapes', async () => {
+  const seen: Record<string, unknown>[] = []
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server()] }),
+    fetchSeries: async (query): Promise<ProbeSeriesPayload> => {
+      seen.push(query)
+      return {
+        all_series: [{
+          key: 'google',
+          label: 'Google',
+          buckets: [{ ms: 25, loss: 0 }],
+        }],
+      }
+    },
+  })
+
+  await service.getPingHistory({ uuid: 'mmwx-0', hours: 1 })
+  await service.getQueryMetrics({
+    entity_ids: ['mmwx-0'],
+    metric_keys: ['ping.latency_ms'],
+    task_ids: [1],
+    hours: 1,
+  })
+
+  assert.deepEqual(seen, [{ server: '0', range: '1h', all: '1' }])
+})
+
+test('does not cache failed series responses', async () => {
+  let seriesCalls = 0
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server()] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => {
+      seriesCalls += 1
+      if (seriesCalls === 1) throw new Error('temporary failure')
+      return {
+        all_series: [{
+          key: 'google',
+          label: 'Google',
+          buckets: [{ ms: 25, loss: 0 }],
+        }],
+      }
+    },
+  })
+
+  await assert.rejects(() => service.getPingHistory({ uuid: 'mmwx-0', hours: 1 }))
+  const history = await service.getPingHistory({ uuid: 'mmwx-0', hours: 1 })
+
+  assert.equal(seriesCalls, 2)
+  assert.equal(history.count, 1)
+})
+
 test('resolves the requested node history from the MMWX series', async () => {
   let calls = 0
   const client = {
@@ -844,8 +1000,12 @@ test('falls back to latest daily traffic for traffic.up/down snapshot queries', 
 })
 
 test('derives Junimo homepage ping bindings from available public ping tasks', async () => {
+  let probeCalls = 0
   const service = new KomariDataService({
-    fetchProbe: async () => ({ servers: [server()] }),
+    fetchProbe: async () => {
+      probeCalls += 1
+      return { servers: [server({ ping: [{ name: 'Google', value: 25, loss: 0 }] })] }
+    },
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({
       bucket_sec: 300,
       generated_at: 1787400000,
@@ -862,6 +1022,7 @@ test('derives Junimo homepage ping bindings from available public ping tasks', a
 
   const settings = await service.getPublicSettings()
 
+  assert.equal(probeCalls, 1)
   assert.deepEqual(settings.theme_settings, {
     showPingChart: true,
     homepagePingBindings: { '1': ['mmwx-0'] },

@@ -42,21 +42,6 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return value
 }
 
-function parsePositiveInteger(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
-  const raw = env[key]
-  if (raw === undefined || raw.trim() === '') {
-    return fallback
-  }
-  if (!/^\d+$/.test(raw.trim())) {
-    throw new ConfigError(`${key} must be a positive integer`)
-  }
-  const value = Number(raw)
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new ConfigError(`${key} must be a positive integer`)
-  }
-  return value
-}
-
 function parseOrigin(value: string): string {
   let url: URL
   try {

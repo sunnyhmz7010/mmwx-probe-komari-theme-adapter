@@ -1,4 +1,4 @@
-import type { MmwxMetricPoint, MmwxProbeSeries, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbeLicenseBadge, ProbePayload, ProbePingSeries, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
+import type { MmwxMetricPoint, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbePayload, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
 import type { ProbeHistoryBuffer } from '../mmwx/history-buffer.js'
 import type { FileThemeSettingsStore } from '../theme/settings-store.js'
 import { ADAPTER_VERSION } from '../version.js'
@@ -11,6 +11,7 @@ import {
   toKomariRecord,
   toKomariPingRecords,
   toLoadHistory,
+  toPingHistory,
   toPingSeriesHistory,
   toSystemMetricHistory,
 } from './mapper.js'
@@ -59,7 +60,14 @@ interface SnapshotValue {
   payload: ProbePayload
 }
 
+interface SeriesCacheEntry {
+  expiresAt: number
+  payload: ProbeSeriesPayload
+}
+
 const BUILD_HASH = process.env.GITHUB_SHA?.trim() || process.env.GIT_COMMIT?.trim() || 'unknown'
+const SERIES_CACHE_TTL_MS = 30_000
+const SERIES_CACHE_MAX_ENTRIES = 128
 
 function numberOrUndefined(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined
@@ -409,6 +417,7 @@ export class KomariServiceError extends Error {
 export class KomariDataService {
   private snapshotInflight?: Promise<SnapshotValue>
   private readonly seriesInflight = new Map<string, Promise<ProbeSeriesPayload>>()
+  private readonly seriesCache = new Map<string, SeriesCacheEntry>()
 
   public constructor(
     private readonly client: DataClient,
@@ -456,7 +465,7 @@ export class KomariDataService {
 
   public async getPublicSettings(): Promise<KomariPublicSettings> {
     const probe = await this.getProbePayload()
-    const themeSettings = await this.resolveThemeSettings()
+    const themeSettings = await this.resolveThemeSettings(probe)
     const icon = stringOrUndefined(probe.icon)
     const sitename = stringOrUndefined(probe.title) || themeTitleFromSource(this.themeSource)
     const customHeadParts: string[] = []
@@ -557,11 +566,11 @@ export class KomariDataService {
 
     if (systemMetricKeys.length > 0) {
       const [payload, current] = await Promise.all([
-        this.getSeries(seriesQuery(query, {
+        this.getSeries({
           server: entityIds[0] ? String(serverIndexFromUuid(entityIds[0])) : query.server,
           range: rangeFromQuery(query),
           metric: stringQueryValue(query.metric) || 'system',
-        })),
+        }),
         this.getProbePayload(),
       ])
       const pointsByEntity = collectQueryMetricSeries(payload, entityIds, systemMetricKeys, current)
@@ -570,7 +579,7 @@ export class KomariDataService {
 
     if (pingMetricKeys.length > 0) {
       series.push(...collectPingQueryMetricSeries(
-        await this.getPingHistory(query),
+        await this.getPingHistoryForEntityIds(entityIds, query),
         entityIds,
         pingMetricKeys,
         normalizeTaskIdFilter(resolveNumericList(query.task_ids ?? query.task_id)),
@@ -589,27 +598,44 @@ export class KomariDataService {
   public async getPingMetricStats(query: SeriesQuery): Promise<KomariPingMetricStats> {
     const entityIds = await this.resolveEntityIdsOrAll(query)
     const taskIds = normalizeTaskIdFilter(resolveNumericList(query.task_ids ?? query.task_id))
-    const stats = summarisePingMetricStats(await this.getPingHistory(query), entityIds, taskIds)
+    const stats = summarisePingMetricStats(await this.getPingHistoryForEntityIds(entityIds, query), entityIds, taskIds)
     return { count: stats.length, stats }
   }
 
   public async getPublicPingTasks(query: SeriesQuery = {}): Promise<KomariPublicPingTask[]> {
-    const tasks = (await this.getPingHistory(query)).tasks.map((task) => ({
-      ...task,
-      target: task.name,
-    }))
-    return dedupePublicPingTasks(tasks)
+    const probe = await this.getProbePayload()
+    return this.getPublicPingTasksFromProbe(probe, query)
+  }
+
+  private async getPublicPingTasksFromProbe(probe: ProbePayload, query: SeriesQuery): Promise<KomariPublicPingTask[]> {
+    const entityIds = await this.resolveEntityIdsOrAll(query, probe)
+    const wanted = new Set(entityIds)
+    const snapshotTasks = toPingHistory(probe.servers, new Date()).tasks
+      .map((task) => ({
+        ...task,
+        clients: task.clients.filter((client) => wanted.has(client)),
+        target: task.name,
+      }))
+      .filter((task) => task.clients.length > 0)
+    if (snapshotTasks.length > 0) return snapshotTasks
+
+    const history = await this.getPingHistoryForEntityIds(entityIds, query)
+    return history.tasks.map((task) => ({ ...task, target: task.name }))
   }
 
   public async getPingHistory(query: SeriesQuery): Promise<PingHistory> {
     const entityIds = await this.resolveEntityIdsOrAll(query)
+    return this.getPingHistoryForEntityIds(entityIds, query)
+  }
+
+  private async getPingHistoryForEntityIds(entityIds: readonly string[], query: SeriesQuery): Promise<PingHistory> {
     const histories = await Promise.all(entityIds.map((entityId) => this.getPingHistoryForUuid(entityId, query)))
     return mergePingHistories(histories)
   }
 
   private async getPingHistoryForUuid(uuid: string, query: SeriesQuery): Promise<PingHistory> {
     const index = serverIndexFromUuid(uuid)
-    const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), all: '1' }))
+    const payload = await this.getSeries({ server: String(index), range: rangeFromQuery(query), all: '1' })
     const fromSeries = (payload.pings || payload.all_series || payload.series)
       ? toPingSeriesHistory(payload, index)
       : { count: 0, records: [], tasks: [], basic_info: { clients: [] } }
@@ -661,7 +687,7 @@ export class KomariDataService {
 
   public async getLoadHistory(uuid: string, query: SeriesQuery): Promise<LoadHistory> {
     const index = serverIndexFromUuid(uuid)
-    const payload = await this.getSeries(seriesQuery(query, { server: String(index), range: rangeFromQuery(query), metric: 'system' }))
+    const payload = await this.getSeries({ server: String(index), range: rangeFromQuery(query), metric: 'system' })
     const fromSeries = isSystemMetricSeries(payload.series)
       ? toSystemMetricHistory(payload.series, index)
       : toLoadHistory({ ...(payload.systems?.find((item) => Number(item.serverId) === index) ?? payload.systems?.[0] ?? { points: [] }), serverId: index })
@@ -702,7 +728,7 @@ export class KomariDataService {
     return toKomariPingRecords(await this.getPingHistory(query))
   }
 
-  private async resolveThemeSettings(): Promise<Record<string, unknown>> {
+  private async resolveThemeSettings(probe?: ProbePayload): Promise<Record<string, unknown>> {
     const base = {
       ...(this.themeSource?.themeSettings ?? {}),
       ...(await this.readStoredThemeSettings()),
@@ -711,7 +737,9 @@ export class KomariDataService {
     if (base.homepagePingBindings !== undefined) return base
 
     try {
-      const tasks = await this.getPublicPingTasks()
+      const tasks = probe
+        ? await this.getPublicPingTasksFromProbe(probe, {})
+        : await this.getPublicPingTasks()
       const homepagePingBindings = Object.fromEntries(tasks
         .filter((task) => task.id > 0 && task.clients.length > 0)
         .map((task) => [String(task.id), task.clients]))
@@ -760,10 +788,22 @@ export class KomariDataService {
 
   private async getSeries(query: SeriesQuery): Promise<ProbeSeriesPayload> {
     const key = stableKey(query)
+    const cached = this.seriesCache.get(key)
+    if (cached && cached.expiresAt > Date.now()) {
+      this.seriesCache.delete(key)
+      this.seriesCache.set(key, cached)
+      return cached.payload
+    }
+    if (cached) this.seriesCache.delete(key)
+
     const inflight = this.seriesInflight.get(key)
     if (inflight) return inflight
 
     const request = this.client.fetchSeries(query)
+      .then((payload) => {
+        this.cacheSeries(key, payload)
+        return payload
+      })
       .catch((error: unknown) => {
         throw new KomariServiceError('MMWX probe history unavailable', error)
       })
@@ -774,9 +814,25 @@ export class KomariDataService {
     return request
   }
 
-  private async resolveEntityIdsOrAll(query: SeriesQuery): Promise<string[]> {
+  // 聚合历史短时缓存；实时缓冲仍在每次映射时合并，避免频繁回源时冻结当前点。
+  private cacheSeries(key: string, payload: ProbeSeriesPayload): void {
+    const now = Date.now()
+    for (const [cachedKey, entry] of this.seriesCache) {
+      if (entry.expiresAt <= now) this.seriesCache.delete(cachedKey)
+    }
+    this.seriesCache.delete(key)
+    this.seriesCache.set(key, { expiresAt: now + SERIES_CACHE_TTL_MS, payload })
+    while (this.seriesCache.size > SERIES_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.seriesCache.keys().next().value
+      if (oldestKey === undefined) break
+      this.seriesCache.delete(oldestKey)
+    }
+  }
+
+  private async resolveEntityIdsOrAll(query: SeriesQuery, probe?: ProbePayload): Promise<string[]> {
     const entityIds = resolveEntityIds(query)
     if (entityIds.length > 0) return entityIds
+    if (probe) return toKomariPublicNodes(probe).filter((node) => !node.hidden).map((node) => node.uuid)
     return (await this.getNodesInformation()).map((node) => node.uuid)
   }
 }
@@ -793,15 +849,6 @@ function stableKey(query: SeriesQuery): string {
   return JSON.stringify(Object.entries(query)
     .filter(([, value]) => value !== undefined)
     .sort(([left], [right]) => left.localeCompare(right)))
-}
-
-function seriesQuery(query: SeriesQuery, override: SeriesQuery = {}): SeriesQuery {
-  const { uuid: _uuid, task_id: _taskId, load_type: _loadType, hours: _hours, ...upstreamQuery } = query
-  return { ...upstreamQuery, ...override }
-}
-
-function serverIndexFromQuery(query: SeriesQuery): number {
-  return serverIndexFromUuid(query.uuid)
 }
 
 function serverIndexFromUuid(uuid: unknown): number {
@@ -837,11 +884,6 @@ function stringQueryValue(value: unknown): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number') return String(value)
   return ''
-}
-
-function resolveEntityUuid(query: SeriesQuery): string {
-  const entityIds = resolveEntityIds(query)
-  return entityIds[0] ?? String(query.uuid ?? query.server ?? 'mmwx-0')
 }
 
 function resolveEntityIds(query: SeriesQuery): string[] {
@@ -922,15 +964,6 @@ function mergePingHistories(histories: readonly PingHistory[]): PingHistory {
     tasks: [...tasksByKey.values()],
     basic_info: { clients },
   }
-}
-
-function dedupePublicPingTasks(tasks: readonly KomariPublicPingTask[]): KomariPublicPingTask[] {
-  const seen = new Map<string, KomariPublicPingTask>()
-  for (const task of tasks) {
-    const key = `${task.id}:${task.name}`
-    if (!seen.has(key)) seen.set(key, task)
-  }
-  return [...seen.values()]
 }
 
 function isPingMetricKey(metricKey: string): boolean {

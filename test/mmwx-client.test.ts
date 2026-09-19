@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import http from 'node:http'
 import { test } from 'node:test'
-import WebSocket, { WebSocketServer } from 'ws'
+import { WebSocketServer } from 'ws'
 
 import { MmwxClient, UpstreamError } from '../src/mmwx/client.js'
 import type { AppConfig } from '../src/config.js'

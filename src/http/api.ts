@@ -351,7 +351,6 @@ async function handleRpc2(service: KomariDataService, request: IncomingMessage, 
     return json(response, 200, rpcError(null, -32700, 'Parse error'))
   }
 
-  const id = rpc.id ?? null
   return json(response, 200, await dispatchRpc2(service, rpc, me))
 }
 
