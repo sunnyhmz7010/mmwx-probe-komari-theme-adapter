@@ -195,7 +195,16 @@ export class ProbeStreamRelay {
   private startWatchdog(): void {
     if (this.watchdogTimer) return
     this.watchdogTimer = setInterval(() => {
-      if (this.frameAgeMs() > STALE_FRAME_MS) void this.ensureSnapshot()
+      if (this.frameAgeMs() <= STALE_FRAME_MS) return
+      // 这里必须 catch：上游不可达是可恢复错误，下一轮 tick 会自然重试。
+      // 直接 `void` 丢弃 promise 会让回源失败冒泡成未处理 rejection，Node 默认
+      // 终止进程 —— 主控长期不可达时帧龄恒为超阈值，每个 tick 都会触发一次，
+      // 于是变成稳定复现的 10 秒崩溃循环，而不是靠重连自愈。
+      void this.ensureSnapshot().catch((error: unknown) => {
+        console.warn('帧龄看门狗兜底采样失败', {
+          reason: error instanceof Error ? error.message : 'unknown error',
+        })
+      })
     }, WATCHDOG_INTERVAL_MS)
   }
 

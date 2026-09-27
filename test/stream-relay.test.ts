@@ -69,8 +69,23 @@ function createOrigin(): ProbeOrigin & { fetchProbeCalls: number } {
   return origin
 }
 
-function createRelayHarness() {
-  const origin = createOrigin()
+function createFailingOrigin(reason = 'MMWX upstream /api/public/probe-servers failed with status 404'): ProbeOrigin & { fetchProbeCalls: number } {
+  const origin = {
+    fetchProbeCalls: 0,
+    fetchProbe: async () => {
+      origin.fetchProbeCalls += 1
+      throw new Error(reason)
+    },
+    fetchSeries: async () => {
+      throw new Error('series is not used in relay tests')
+    },
+    streamUrl: () => 'ws://upstream.test/api/public/probe-ws',
+    probeHeaders: () => ({ 'X-MMwx-Probe-Token': 'token' }),
+  }
+  return origin
+}
+
+function createRelayHarness(origin: ProbeOrigin & { fetchProbeCalls: number } = createOrigin()) {
   const history = new ProbeHistoryBuffer()
   const sockets: FakeSocket[] = []
   const factory: WebSocketFactory = (() => {
@@ -149,6 +164,36 @@ test('看门狗：帧龄超阈值用 HTTP 快照兜底，正常帧龄不回源',
   t.mock.timers.tick(10_000)
   await new Promise<void>((resolve) => setImmediate(resolve))
   assert.equal(origin.fetchProbeCalls, 2)
+  relay.close()
+})
+
+test('看门狗：上游持续不可达时不产生未处理 rejection，进程存活且下一轮继续重试', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000_000_000 })
+  // 主控长期不可达时帧龄恒超阈值，看门狗每个 tick 都会回源。若回源失败不被接住，
+  // 就会冒泡成未处理 rejection 让 Node 终止进程，形成 10 秒一个的崩溃循环。
+  const unhandled: unknown[] = []
+  const onUnhandledRejection = (reason: unknown): void => {
+    unhandled.push(reason)
+  }
+  process.on('unhandledRejection', onUnhandledRejection)
+  t.after(() => {
+    process.off('unhandledRejection', onUnhandledRejection)
+  })
+
+  const origin = createFailingOrigin()
+  const { relay } = createRelayHarness(origin)
+  relay.start()
+
+  t.mock.timers.tick(10_000)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(origin.fetchProbeCalls, 1)
+  assert.deepEqual(unhandled, [], '看门狗回源失败不得冒泡为未处理 rejection')
+
+  // 未崩溃：下一轮 tick 继续重试，恢复主控后即可自愈，不依赖进程重启。
+  t.mock.timers.tick(10_000)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(origin.fetchProbeCalls, 2)
+  assert.deepEqual(unhandled, [], '重复失败同样不得冒泡')
   relay.close()
 })
 
