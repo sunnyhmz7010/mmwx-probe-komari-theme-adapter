@@ -219,7 +219,7 @@ theme-market/main/v1.json` 显示的主题均可正常安装。
 | `https://github.com/qwer-xyz/komari-theme-zen` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/nuomiiiii/nezha` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 
-> ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、TCP/UDP 连接数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
+> ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
 
 ### 📋 环境变量
 
@@ -239,6 +239,7 @@ theme-market/main/v1.json` 显示的主题均可正常安装。
 - 历史采样缓冲：实时帧同步写入进程内 `ProbeHistoryBuffer`，Komari 兼容层的 ping / 负载历史优先返回逐帧密度样本；缓冲保留最近 1 小时逐帧、更早按分钟降采样、共 25 小时，并每 5 分钟落盘到运行目录 `history-buffer.json`、启动时自动恢复，进程重启不丢历史；仅当运行目录数据不存在（如未映射卷的容器重建）时由主控聚合序列填补冷启动窗口（主控聚合桶粒度较粗——实测约 30 分钟/桶，直接输出会导致 Komari 主题历史块出现空白段）
 - 转换池：Komari 兼容层从探针快照和历史序列池读取数据，再映射成 Komari 需要的固定结构
 - 字段映射：地区字段优先取 `region_country`（ISO 代码）供主题解析国旗；续费货币把 ISO 代码转换为 Komari 官方 12 种货币符号（`CNY`→`¥`、`USD`→`$`、`CAD`→`CA$` 等）；`ping.loss` 指标按 Komari 语义输出 0~1 比例
+- 系统连接数：主控 `tcp_connections` / `udp_connections` 映射为 Komari 的 `connections` / `connections_udp` 状态字段与 `public:queryMetrics` 的 `connections.tcp` / `connections.udp` 指标。口径为**整机**而非代理用户连接（TCP 只数 `/proc/net/tcp{,6}` 的 ESTABLISHED，UDP 数 `/proc/net/udp{,6}` 的全部 socket），是纯计数，映射层不做任何单位进位换算。老 agent 与非 Linux agent 不上报时主控省略字段，适配器整字段省略、不补 0（0 会与「真的一条连接都没有」混淆），主题按「无数据」处理
 - 流量口径：`/api/nodes`、`/api/public` 与 `common:getNodesLatestStatus` 中的 `totalUp/totalDown`、`net_total_up/net_total_down` 映射为妙妙屋主控的**计费周期已用流量**（`traffic_used`，已含 `traffic_adjustment`，按主控 `traffic_stats_mode` 把调整值分摊回上下行，`both` 按比例缩放使合计与主控一致；`upload`/`download` 计费方向直取，`max` 取较大方向），无周期字段时回退开机累计计数器；`public:queryMetrics` 的 `traffic.up/traffic.down` 输出**每个时间桶的增量字节**（主题逐点求和得当日流量），累计序列（`cumulative_*`）自动转换为相邻差分，而 `net.total.up/net.total.down` 仍保持开机累计计数器语义，供 records 类接口做差值统计
 - 状态映射：`common:getNodes`、`common:getNodesLatestStatus`、`common:getNodeRecentStatus`、`common:getRecords`、`public:queryMetrics` 都从同一套转换结果生成
 - 聚合规则：Ping / 负载历史在未指定 `uuid` 时聚合全部可见节点，避免主题只看到第一个节点

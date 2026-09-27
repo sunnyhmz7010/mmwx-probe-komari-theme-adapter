@@ -138,6 +138,40 @@ test('falls back to cumulative counters on latest status without period fields',
   assert.equal(status.net_total_down, 9999)
 })
 
+test('maps MMWX system connection counts onto Komari status fields', () => {
+  const status = toKomariNodeStatus(server({
+    tcp_connections: 24,
+    udp_connections: 2,
+  }), 0, now)
+
+  assert.equal(status.connections, 24)
+  assert.equal(status.connections_udp, 2)
+})
+
+test('omits connection counts when MMWX does not report them instead of defaulting to zero', () => {
+  // 老 agent 与非 Linux agent 不上报连接数，主控整个省略字段。此时补 0 会与
+  // 「真的一条连接都没有」混淆，因此按「省略 > unknown > 0」兜底。
+  const status = toKomariNodeStatus(server(), 0, now)
+
+  assert.equal(status.connections, undefined)
+  assert.equal(status.connections_udp, undefined)
+})
+
+test('keeps MMWX connection counts through the probe payload whitelist', async () => {
+  // normalizeProbeServer 按白名单逐字段重建 ProbeServer。条件展开的对象不会被
+  // TypeScript 检出多余/错误键名，所以这里必须走公开接口断言端到端结果，
+  // 否则白名单把 tcp_connections 写成 connections 时不会有任何编译期报错。
+  const service = new KomariDataService({
+    fetchProbe: async () => ({ servers: [server({ tcp_connections: 24, udp_connections: 2 })] }),
+    fetchSeries: async (): Promise<ProbeSeriesPayload> => ({}),
+  })
+
+  const statuses = await service.getNodesLatestStatus()
+
+  assert.equal(statuses['mmwx-0']?.connections, 24)
+  assert.equal(statuses['mmwx-0']?.connections_udp, 2)
+})
+
 test('uses country when region is unavailable and filters invalid numbers', () => {
   const node = toKomariNode(server({
     country: 'US',
@@ -340,8 +374,8 @@ test('maps system metrics with separate realtime and cumulative network fields',
     cumulative_up: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 567 }],
     cumulative_down: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 890 }],
     process: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 99 }],
-    connections: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 11 }],
-    connections_udp: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 2 }],
+    tcp_connections: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 11 }],
+    udp_connections: [{ timestamp: '2026-08-21T00:00:00.000Z', value: 2 }],
   }, 0)
 
   assert.deepEqual(history.records, [{
@@ -909,8 +943,8 @@ test('uses current probe values as metric fallback when system history omits ava
         disk_used: 10,
         disk_total: 100,
         process: 22,
-        connections: 9,
-        connections_udp: 3,
+        tcp_connections: 9,
+        udp_connections: 3,
       })],
     }),
     fetchSeries: async (): Promise<ProbeSeriesPayload> => ({

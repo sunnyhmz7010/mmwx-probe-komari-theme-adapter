@@ -116,8 +116,12 @@ export interface ProbeServer {
   period_start?: string | number | null
   period_end?: string | number | null
   process?: number | string | null
-  connections?: number | string | null
-  connections_udp?: number | string | null
+  // 系统级连接数（**整机**口径，不是代理用户的连接数）。口径由 agent 定：
+  // TCP 只数 /proc/net/tcp{,6} 的 ESTABLISHED，UDP 数 /proc/net/udp{,6} 的全部 socket。
+  // 老 agent 与非 Linux agent 不上报 → 主控整个省略字段 → 映射层按「省略 > unknown > 0」
+  // 兜底，不补 0（0 会与「真的一条连接都没有」混淆）。
+  tcp_connections?: number | string | null
+  udp_connections?: number | string | null
   uptime?: number | string | null
   weight?: number | string | null
   price?: number | string | null
@@ -214,8 +218,8 @@ export interface MmwxSystemMetricSeries {
   cumulative_up?: MmwxMetricPoint[]
   cumulative_down?: MmwxMetricPoint[]
   process?: MmwxMetricPoint[]
-  connections?: MmwxMetricPoint[]
-  connections_udp?: MmwxMetricPoint[]
+  tcp_connections?: MmwxMetricPoint[]
+  udp_connections?: MmwxMetricPoint[]
 }
 
 export interface MmwxMetricPoint {
@@ -256,6 +260,6 @@ export interface MmwxSystemSeriesPoint {
   traffic_up?: number | string | null
   traffic_down?: number | string | null
   process?: number | string | null
-  connections?: number | string | null
-  connections_udp?: number | string | null
+  tcp_connections?: number | string | null
+  udp_connections?: number | string | null
 }

@@ -333,8 +333,8 @@ function normalizeProbeServer(server: ProbeServer, index: number): ProbeServer {
     ...(periodStart ? { period_start: periodStart } : {}),
     ...(periodEnd ? { period_end: periodEnd } : {}),
     ...(numberOrUndefined(server.process) !== undefined ? { process: numberOrUndefined(server.process) } : {}),
-    ...(numberOrUndefined(server.connections) !== undefined ? { connections: numberOrUndefined(server.connections) } : {}),
-    ...(numberOrUndefined(server.connections_udp) !== undefined ? { connections_udp: numberOrUndefined(server.connections_udp) } : {}),
+    ...(numberOrUndefined(server.tcp_connections) !== undefined ? { tcp_connections: numberOrUndefined(server.tcp_connections) } : {}),
+    ...(numberOrUndefined(server.udp_connections) !== undefined ? { udp_connections: numberOrUndefined(server.udp_connections) } : {}),
     ...(numberOrUndefined(server.uptime) !== undefined ? { uptime: numberOrUndefined(server.uptime) } : {}),
     ...(numberOrUndefined(server.weight) !== undefined ? { weight: numberOrUndefined(server.weight) } : {}),
     ...(numberOrUndefined(server.price) !== undefined ? { price: numberOrUndefined(server.price) } : {}),
@@ -1089,8 +1089,8 @@ function currentMetricValue(server: ProbeServer, metricKey: string): number | un
     case 'traffic.up': return lastDailyTrafficValue(server, 'uplink')
     case 'traffic.down': return lastDailyTrafficValue(server, 'downlink')
     case 'process.count': return numberOrUndefined(server.process)
-    case 'connections.tcp': return numberOrUndefined(server.connections)
-    case 'connections.udp': return numberOrUndefined(server.connections_udp)
+    case 'connections.tcp': return numberOrUndefined(server.tcp_connections)
+    case 'connections.udp': return numberOrUndefined(server.udp_connections)
     default: return undefined
   }
 }
@@ -1243,8 +1243,8 @@ function metricSourceByKey(payload: MmwxSystemMetricSeries, metricKey: string): 
     case 'net.total.down':
     case 'traffic.down': return payload.cumulative_down ?? payload.traffic_down
     case 'process.count': return payload.process
-    case 'connections.tcp': return payload.connections
-    case 'connections.udp': return payload.connections_udp
+    case 'connections.tcp': return payload.tcp_connections
+    case 'connections.udp': return payload.udp_connections
     default: return undefined
   }
 }
@@ -1292,9 +1292,9 @@ function systemMetricValue(point: MmwxSystemSeriesPoint, metricKey: string): num
     case 'process.count':
       return numberOrUndefined(point.process) ?? null
     case 'connections.tcp':
-      return numberOrUndefined(point.connections) ?? null
+      return numberOrUndefined(point.tcp_connections) ?? null
     case 'connections.udp':
-      return numberOrUndefined(point.connections_udp) ?? null
+      return numberOrUndefined(point.udp_connections) ?? null
     default:
       return numberOrUndefined(point.load) ?? null
   }

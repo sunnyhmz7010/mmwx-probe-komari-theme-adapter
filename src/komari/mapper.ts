@@ -328,8 +328,8 @@ export function toSystemMetricHistory(series: MmwxSystemMetricSeries, serverInde
   applyMetric(series.cumulative_up ?? series.traffic_up, (record, value) => { record.net_total_up = value })
   applyMetric(series.cumulative_down ?? series.traffic_down, (record, value) => { record.net_total_down = value })
   applyMetric(series.process, (record, value) => { record.process = value })
-  applyMetric(series.connections, (record, value) => { record.connections = value })
-  applyMetric(series.connections_udp, (record, value) => { record.connections_udp = value })
+  applyMetric(series.tcp_connections, (record, value) => { record.connections = value })
+  applyMetric(series.udp_connections, (record, value) => { record.connections_udp = value })
 
   const records = [...byTime.entries()]
     .sort(([left], [right]) => left - right)
@@ -585,8 +585,8 @@ export function toKomariNodeStatus(server: ProbeServer, index: number, now = new
     net_total_out: periodTraffic?.up ?? firstFinite([server.net_total_up, server.totalUpload, server.cumulative_up, server.traffic_used_up]) ?? 0,
     net_total_down_alt: periodTraffic?.down ?? firstFinite([server.net_total_down, server.totalDownload, server.cumulative_down, server.traffic_used_down]) ?? 0,
     process: numberOrUndefined(server.process),
-    connections: numberOrUndefined(server.connections),
-    connections_udp: numberOrUndefined(server.connections_udp),
+    connections: numberOrUndefined(server.tcp_connections),
+    connections_udp: numberOrUndefined(server.udp_connections),
     online: server.online !== false,
     uptime: numberOrUndefined(server.uptime) ?? 0,
   }
